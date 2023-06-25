@@ -2,6 +2,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <algorithm>
 #include <fstream>
 #include <unistd.h>
 #include <stdio.h>
@@ -23,3 +24,5 @@ extern Json::Value injection_config;
 
 std::string hexToAscii(std::string input);
 int hexToDecimal(int input);
+
+void findAndReplaceAll(std::string& data, std::string toSearch, std::string replaceStr);

@@ -2,10 +2,14 @@
 #include "device-libusb.h"
 #include "proxy.h"
 #include "misc.h"
+#include <set>
 
 int verbose_level = 0;
 bool please_stop_ep0 = false;
 bool please_stop_eps = false;
+std::map<int, int> host_device_eps_map;
+std::set<int> dev_endpoint_out_list;
+std::set<int> dev_endpoint_in_list;
 
 bool injection_enabled = false;
 std::string injection_file = "injection.json";
@@ -127,6 +131,12 @@ int setup_host_usb_desc() {
 						.bRefresh =		temp_device_altsetting.endpoint[l].bRefresh,
 						.bSynchAddress = 	temp_device_altsetting.endpoint[l].bSynchAddress,
 					};
+					if (usb_endpoint_dir_out(&temp_endpoint)) {
+						dev_endpoint_out_list.insert(temp_endpoint.bEndpointAddress);
+					}
+					else {
+						dev_endpoint_in_list.insert(temp_endpoint.bEndpointAddress);
+					}
 					temp_endpoints[l].endpoint = temp_endpoint;
 					temp_endpoints[l].thread_read = 0;
 					temp_endpoints[l].thread_write = 0;
@@ -146,6 +156,51 @@ int setup_host_usb_desc() {
 
 	host_device_desc.current_config = 0;
 
+	return 0;
+}
+
+int set_host_device_eps_map(int fd) {
+	struct usb_raw_eps_info info;
+	memset(&info, 0, sizeof(info));
+	
+	int num = usb_raw_eps_info(fd, &info);
+	std::vector<int> raw_eps_addr_in;
+	std::vector<int> raw_eps_addr_out;
+	
+	for (int i = 0; i < num; i++) {
+		if (info.eps[i].caps.dir_out) {
+			int info_endpoint_address = info.eps[i].addr | USB_DIR_OUT;
+			//不存在，添加到set
+			unsigned int old_size = dev_endpoint_out_list.size();
+			dev_endpoint_out_list.erase(info_endpoint_address);
+			if (old_size == dev_endpoint_out_list.size())
+				raw_eps_addr_out.push_back(info_endpoint_address);
+		}
+		else {
+			int info_endpoint_address = info.eps[i].addr | USB_DIR_IN;
+			//不存在，添加到set
+			unsigned int old_end = dev_endpoint_in_list.size();
+			dev_endpoint_in_list.erase(info_endpoint_address);
+			if (old_end == dev_endpoint_in_list.size())
+				raw_eps_addr_in.push_back(info_endpoint_address);
+		}
+	}
+	if (raw_eps_addr_out.size() < dev_endpoint_out_list.size()) {
+		printf("Error: endpoints out is to large\n");
+		return -1;
+	}
+	if (raw_eps_addr_in.size() < dev_endpoint_in_list.size()) {
+		printf("Error: endpoints in is to large\n");
+		return -1;
+	}
+	for (std::set<int>::iterator it = dev_endpoint_out_list.begin(); it != dev_endpoint_out_list.end(); ++it) {
+		host_device_eps_map.insert(std::pair<int, int>(*it, raw_eps_addr_out.back()));
+		raw_eps_addr_out.pop_back();
+	}
+	for (std::set<int>::iterator it = dev_endpoint_in_list.begin(); it != dev_endpoint_in_list.end(); ++it) {
+		host_device_eps_map.insert(std::pair<int, int>(*it, raw_eps_addr_in.back()));
+		raw_eps_addr_in.pop_back();
+	}
 	return 0;
 }
 
@@ -254,6 +309,8 @@ int main(int argc, char **argv)
 	int fd = usb_raw_open();
 	usb_raw_init(fd, USB_SPEED_HIGH, driver, device);
 	usb_raw_run(fd);
+	if (set_host_device_eps_map(fd) < 0)
+		exit(1);
 
 	ep0_loop(fd);
 

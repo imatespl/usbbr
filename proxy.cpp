@@ -3,6 +3,7 @@
 #include "host-raw-gadget.h"
 #include "device-libusb.h"
 #include "misc.h"
+#include "regex"
 
 void injection(struct usb_raw_transfer_io &io, Json::Value patterns, std::string replacement_hex, bool &data_modified) {
 	std::string data(io.data, io.inner.length);
@@ -100,6 +101,10 @@ void printData(struct usb_raw_transfer_io io, __u8 bEndpointAddress, std::string
 }
 
 void *ep_loop_write(void *arg) {
+	// Enable asynchronous cancellation
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	// Set cancellation type to deferred cancellation
+	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	struct thread_info thread_info = *((struct thread_info*) arg);
 	int fd = thread_info.fd;
 	int ep_num = thread_info.ep_num;
@@ -113,6 +118,8 @@ void *ep_loop_write(void *arg) {
 		ep.bEndpointAddress, gettid());
 
 	while (!please_stop_eps) {
+		// Check for cancellation
+		pthread_testcancel();
 		assert(ep_num != -1);
 		if (data_queue->size() == 0) {
 			usleep(100);
@@ -151,6 +158,10 @@ void *ep_loop_write(void *arg) {
 }
 
 void *ep_loop_read(void *arg) {
+	// Enable asynchronous cancellation
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	// Set cancellation type to deferred cancellation
+	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	struct thread_info thread_info = *((struct thread_info*) arg);
 	int fd = thread_info.fd;
 	int ep_num = thread_info.ep_num;
@@ -164,6 +175,8 @@ void *ep_loop_read(void *arg) {
 		ep.bEndpointAddress, gettid());
 
 	while (!please_stop_eps) {
+		// Check for cancellation
+		pthread_testcancel();
 		assert(ep_num != -1);
 		struct usb_raw_transfer_io io;
 
@@ -263,8 +276,16 @@ void process_eps(int fd, int config, int interface, int altsetting) {
 			ep->thread_info.dir = "in";
 		else
 			ep->thread_info.dir = "out";
-
-		ep->thread_info.ep_num = usb_raw_ep_enable(fd, &ep->thread_info.endpoint);
+		int map_eps = host_device_eps_map[ep->thread_info.endpoint.bEndpointAddress];
+		if (host_device_eps_map[ep->thread_info.endpoint.bEndpointAddress]) {
+			struct usb_endpoint_descriptor temp_endpoint = ep->thread_info.endpoint;
+			temp_endpoint.bEndpointAddress = map_eps;
+			ep->thread_info.ep_num = usb_raw_ep_enable(fd, &temp_endpoint);
+		}
+		else {
+			ep->thread_info.ep_num = usb_raw_ep_enable(fd, &ep->thread_info.endpoint);
+		}			
+		
 		printf("%s_%s: addr = %u, ep = #%d\n",
 			ep->thread_info.transfer_type.c_str(),
 			ep->thread_info.dir.c_str(),
@@ -286,16 +307,24 @@ void terminate_eps(int fd, int config, int interface, int altsetting) {
 	struct raw_gadget_altsetting *alt = &host_device_desc.configs[config]
 					.interfaces[interface].altsettings[altsetting];
 
-	please_stop_eps = true;
 
 	for (int i = 0; i < alt->interface.bNumEndpoints; i++) {
 		struct raw_gadget_endpoint *ep = &alt->endpoints[i];
-
-		if (ep->thread_read && pthread_join(ep->thread_read, NULL)) {
-			fprintf(stderr, "Error join thread_read\n");
+		/*When a child thread uses wait_for_completion_interruptible()
+		and the main thread calls pthread_join(), the main thread may
+		get blocked indefinitely because wait_for_completion_interruptible()
+		does not return until the completion of the associated task or until
+		it is interrupted.This situation occurs because pthread_join() waits
+		for the child thread to exit before continuing.*/
+		if (ep->thread_read) {
+			pthread_cancel(ep->thread_read);
+			if (pthread_join(ep->thread_read, NULL))
+				fprintf(stderr, "Error join thread_read\n");
 		}
-		if (ep->thread_write && pthread_join(ep->thread_write, NULL)) {
-			fprintf(stderr, "Error join thread_write\n");
+		if (ep->thread_write) {
+			pthread_cancel(ep->thread_write);
+			if (pthread_join(ep->thread_write, NULL))
+				fprintf(stderr, "Error join thread_write\n");
 		}
 		ep->thread_read = 0;
 		ep->thread_write = 0;
@@ -307,7 +336,6 @@ void terminate_eps(int fd, int config, int interface, int altsetting) {
 		delete ep->thread_info.data_mutex;
 	}
 
-	please_stop_eps = false;
 }
 
 void ep0_loop(int fd) {
@@ -368,6 +396,31 @@ void ep0_loop(int fd) {
 						break;
 					}
 				}
+				if ((event.ctrl.bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD &&
+					event.ctrl.bRequest == USB_REQ_GET_DESCRIPTOR) {
+					if((event.ctrl.wValue >> 8) == USB_DT_DEVICE) {
+						struct usb_device_descriptor* pdata = (struct usb_device_descriptor*)&io.data;
+						pdata->bMaxPacketSize0 = 64;
+					}
+					else if((event.ctrl.wValue >> 8) == USB_DT_CONFIG) {
+						if (host_device_eps_map.size() != 0) {
+							std::string data(io.data, io.inner.length);
+							for (auto it = host_device_eps_map.begin(); it != host_device_eps_map.end(); ++it) {
+								//bLength+bDescriptorType+bEndpointAddress
+								char pattern[3] = { char(0x07), char(0x05),char(it->first) };
+								std::string str_pattern(pattern, 3);
+								char replacement[3] = { char(0x07), char(0x05), char(it->second) };
+								std::string str_replacement(replacement, 3);
+								findAndReplaceAll(data, str_pattern, str_replacement);
+							}
+							io.inner.length = data.length();
+							for (size_t j = 0; j < data.length(); j++) {
+								io.data[j] = data[j];
+							}
+						}
+					}
+					
+				}
 
 				if (verbose_level >= 2)
 					printData(io, 0x00, "control", "in");
@@ -424,7 +477,7 @@ void ep0_loop(int fd) {
 				set_configuration_done_once = true;
 			}
 			else if (event.ctrl.bRequestType == 0x01 && event.ctrl.bRequest == 0x0b) { // Set interface/alt_setting
-				struct raw_gadget_config *config =
+				struct raw_gadget_config* config =
 					&host_device_desc.configs[host_device_desc.current_config];
 
 				int desired_interface = -1;
@@ -495,7 +548,14 @@ void ep0_loop(int fd) {
 					printf("ep0: transferred %d bytes (out)\n", rv);
 				}
 				else {
-					usb_raw_ep0_stall(fd);
+					if (event.ctrl.bRequestType == 0x21
+						&& event.ctrl.bRequest == 0x0a
+						&& event.ctrl.wIndex != 0) {
+						continue;
+					}
+					else {
+						usb_raw_ep0_stall(fd);
+					}
 				}
 			}
 		}

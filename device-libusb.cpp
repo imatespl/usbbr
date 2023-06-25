@@ -56,6 +56,7 @@ int get_descriptor(libusb_device *device) {
 
 int connect_device(int vendor_id, int product_id) {
 	int result;
+	int bus_number;
 	result = libusb_init(&context);
 	if (result < 0) {
 		fprintf(stderr, "Init error: %s\n", libusb_strerror((libusb_error)result));
@@ -93,9 +94,16 @@ int connect_device(int vendor_id, int product_id) {
 
 			if (device_device_desc.bDeviceClass == LIBUSB_CLASS_HUB)
 				continue;
-
+			
 			if (vendor_id == -1 && product_id == -1) {
-				found = dvc;
+				//orangepc just proxy usb port 3(usb2.0) port 6(usb1.1)
+				//phy port is port 3
+				bus_number = libusb_get_bus_number(dvc);
+				if ((bus_number == 3) || (bus_number == 6))
+					found = dvc;
+				else
+					continue;
+
 				break;
 			}
 			else if ((vendor_id == device_device_desc.idVendor || vendor_id == LIBUSB_HOTPLUG_MATCH_ANY) &&
@@ -163,7 +171,7 @@ int connect_device(int vendor_id, int product_id) {
 	if (callback_handle == -1) {
 		result = libusb_hotplug_register_callback(context,
 			(libusb_hotplug_event) (LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT),
-			(libusb_hotplug_flag) 0, vendor_id, product_id,
+			(libusb_hotplug_flag) 0, device_device_desc.idVendor, device_device_desc.idProduct,
 			LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback_handle);
 
 		if (result != LIBUSB_SUCCESS) {

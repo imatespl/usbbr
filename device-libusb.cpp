@@ -16,14 +16,23 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 			void *user_data __attribute__((unused))) {
 	printf("Hotplug event\n");
 
-	kill(0, SIGINT);
+	//stop usb_tcpdump
+	std::string pcap_file_name = pcap_file();
+	std::string pcap_file_save_name = pcap_file_save();
+	stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+	//must close raw_gadget fd before restart self
+	close(raw_gadget_fd);
+	//restart self becasue device remove
+	if (execv(self_prog[0], self_prog) == -1) {
+		printf("restart self process failed\n");
+	}
 	return 0;
 }
 
 void *hotplug_monitor(void *arg __attribute__((unused))) {
 	printf("Start hotplug_monitor thread, thread id(%d)\n", gettid());
 	while(true) {
-		usleep(100 * 1000);
+		usleep(3000);
 		libusb_handle_events_completed(NULL, NULL);
 	}
 }
@@ -56,7 +65,6 @@ int get_descriptor(libusb_device *device) {
 
 int connect_device(int vendor_id, int product_id) {
 	int result;
-	int bus_number;
 	result = libusb_init(&context);
 	if (result < 0) {
 		fprintf(stderr, "Init error: %s\n", libusb_strerror((libusb_error)result));
@@ -83,8 +91,8 @@ int connect_device(int vendor_id, int product_id) {
 					libusb_strerror((libusb_error)cnt));
 			return 1;
 		}
-		if (verbose_level)
-			printf("%d Devices in list\n", cnt);
+		//if (verbose_level)
+		//	printf("%d Devices in list\n", cnt);
 
 		for (int i = 0; i < cnt; i++) {
 			libusb_device *dvc = devs[i];
@@ -99,9 +107,11 @@ int connect_device(int vendor_id, int product_id) {
 				//orangepc just proxy usb port 3(usb2.0) port 6(usb1.1)
 				//phy port is port 3
 				bus_number = libusb_get_bus_number(dvc);
-				if ((bus_number == 3) || (bus_number == 6))
+				if ((bus_number == 3) || (bus_number == 6)) {
+					std::string pcap_file_name = pcap_file();
+					start_tcpdump_usbmon(bus_number, pcap_file_name);
 					found = dvc;
-				else
+				} else
 					continue;
 
 				break;
@@ -116,7 +126,7 @@ int connect_device(int vendor_id, int product_id) {
 		if (verbose_level && vendor_id != -1 && product_id != -1)
 			printf("Target device not found\n");
 		libusb_free_device_list(devs, 1);
-		sleep(1);
+		usleep(2000);
 	}
 
 	result = libusb_open(found, &dev_handle);
@@ -250,7 +260,6 @@ void send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 	int result = LIBUSB_SUCCESS;
 
 	bool incomplete_transfer = false;
-
 	switch (attributes & USB_ENDPOINT_XFERTYPE_MASK) {
 	case USB_ENDPOINT_XFER_CONTROL:
 		fprintf(stderr, "Can't send on a control endpoint.\n");
@@ -292,8 +301,19 @@ void send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 		break;
 	}
 	if (result != LIBUSB_SUCCESS) {
-		fprintf(stderr, "Transfer error sending on EP%02x: %s\n",
+		fprintf(stderr, "Transfer error sending on EP%02x: %s, close raw_gadget and restart self process\n",
 				endpoint, libusb_strerror((libusb_error)result));
+		//stop usb_tcpdump
+		std::string pcap_file_name = pcap_file();
+		std::string pcap_file_save_name = pcap_file_save();
+		stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+		//device may error restart self process to hanle new device
+		//must close raw_gadget fd before restart self
+		close(raw_gadget_fd);
+		//restart self becasue device remove
+		if (execv(self_prog[0], self_prog) == -1) {
+			printf("restart self process failed\n");
+		}
 	}
 }
 
@@ -332,7 +352,18 @@ void receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
 	}
 
 	if (result != LIBUSB_SUCCESS) {
-		fprintf(stderr, "Transfer error receiving on EP%02x: %s\n",
+		fprintf(stderr, "Transfer error receiving on EP%02x: %s, close raw_gadget and restart self process\n",
 				endpoint, libusb_strerror((libusb_error)result));
+		//stop usb_tcpdump
+		std::string pcap_file_name = pcap_file();
+		std::string pcap_file_save_name = pcap_file_save();
+		stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+		//device may error restart self process to hanle new device
+		//must close raw_gadget fd before restart self
+		close(raw_gadget_fd);
+		//restart self becasue device remove
+		if (execv(self_prog[0], self_prog) == -1) {
+			printf("restart self process failed\n");
+		}
 	}
 }

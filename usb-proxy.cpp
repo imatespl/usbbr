@@ -7,6 +7,10 @@
 int verbose_level = 0;
 bool please_stop_ep0 = false;
 bool please_stop_eps = false;
+char** self_prog = NULL;
+int raw_gadget_fd = 0;
+int bus_number = 0;
+int pcap_pid = -1;
 std::map<int, int> host_device_eps_map;
 std::set<int> dev_endpoint_out_list;
 std::set<int> dev_endpoint_in_list;
@@ -211,12 +215,14 @@ int main(int argc, char **argv)
 	int vendor_id = -1;
 	int product_id = -1;
 
-	struct sigaction action;
-	memset(&action, 0, sizeof(struct sigaction));
-	action.sa_handler = handle_signal;
-	sigaction(SIGTERM, &action, NULL);
-	sigaction(SIGINT, &action, NULL);
-
+	//store argv to self_prog will use hotplug to restart self process
+	self_prog = new char* [argc + 1];
+	for (int i = 0; i < argc; i++) {
+		self_prog[i] = new char[strlen(argv[i])];
+		memcpy(self_prog[i], argv[i], strlen(argv[i]));
+	}
+	//need null
+	self_prog[argc] = 0;
 	int opt, lopt, loidx;
 	const char *optstring = "hv";
 	const struct option long_options[] = {
@@ -307,6 +313,7 @@ int main(int argc, char **argv)
 	printf("Setup USB config successfully\n");
 
 	int fd = usb_raw_open();
+	raw_gadget_fd = fd;
 	usb_raw_init(fd, USB_SPEED_HIGH, driver, device);
 	usb_raw_run(fd);
 	if (set_host_device_eps_map(fd) < 0)

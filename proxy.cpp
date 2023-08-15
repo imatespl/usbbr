@@ -5,6 +5,9 @@
 #include "misc.h"
 #include "regex"
 
+std::mutex mtx;
+std::queue<int> eject_command_control;
+
 void injection(struct usb_raw_transfer_io &io, Json::Value patterns, std::string replacement_hex, bool &data_modified) {
 	std::string data(io.data, io.inner.length);
 	std::string replacement = hexToAscii(replacement_hex);
@@ -140,6 +143,28 @@ void *ep_loop_write(void *arg) {
 				printf("EP%x(%s_%s): wrote %d bytes to host\n", ep.bEndpointAddress,
 					transfer_type.c_str(), dir.c_str(), rv);
 			}
+
+			//stop usb tcpdump when write eject command  response
+			int item = 0;
+			{
+				std::lock_guard<std::mutex> lock(mtx);
+				if (!eject_command_control.empty()) {
+					item = eject_command_control.front();
+					eject_command_control.pop();
+				}
+			}
+			if (item == 1) {
+				//stop usb_tcpdump
+				std::string pcap_file_name = pcap_file();
+				std::string pcap_file_save_name = pcap_file_save();
+				//stop tcpdump will cause usb_raw_event_fetch receive EINTR,
+				//will casue EP0 thread stop, should catch this except in EP0
+				//thread
+				stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+				//here not restart all process, need start tcpdump process 
+				start_tcpdump_usbmon(bus_number, pcap_file_name);
+
+			}
 		}
 		else {
 			int length = io.inner.length;
@@ -204,9 +229,10 @@ void *ep_loop_read(void *arg) {
 				data_queue->push_back(io);
 				data_mutex->unlock();
 				if (verbose_level)
-					printf("EP%x(%s_%s): enqueued %d bytes to queue\n", ep.bEndpointAddress,
+					printf("EP%x(%s_%s): USB_DIR_IN enqueued %d bytes to queue\n", ep.bEndpointAddress,
 							transfer_type.c_str(), dir.c_str(), nbytes);
 			}
+
 
 			if (data)
 				delete[] data;
@@ -229,7 +255,7 @@ void *ep_loop_read(void *arg) {
 				data_queue->push_back(io);
 				data_mutex->unlock();
 				if (verbose_level)
-					printf("EP%x(%s_%s): enqueued %d bytes to queue\n", ep.bEndpointAddress,
+					printf("EP%x(%s_%s): USB_DIR_OUT enqueued %d bytes to queue\n", ep.bEndpointAddress,
 							transfer_type.c_str(), dir.c_str(), rv);
 			}
 		}
@@ -340,6 +366,8 @@ void terminate_eps(int fd, int config, int interface, int altsetting) {
 
 void ep0_loop(int fd) {
 	bool set_configuration_done_once = false;
+	int prev_desired_config = -1;
+	bool get_device_done_once = false;
 
 	printf("Start for EP0, thread id(%d)\n", gettid());
 
@@ -355,8 +383,13 @@ void ep0_loop(int fd) {
 		log_event((struct usb_raw_event *)&event);
 
 		if (event.inner.length == 4294967295) {
-			printf("End for EP0, thread id(%d)\n", gettid());
-			return;
+			//all usb hotplug remove will cause restart usbbr 
+			//when in this, is big card reader receive eject 
+			//command stop tcpdump process cause, continue
+			continue;
+
+			//printf("End for EP0, thread id(%d)\n", gettid());
+			//return;
 		}
 
 		if (event.inner.type != USB_RAW_EVENT_CONTROL)
@@ -372,8 +405,26 @@ void ep0_loop(int fd) {
 		int result = 0;
 		unsigned char *control_data = new unsigned char[event.ctrl.wLength];
 
+
 		int rv = -1;
 		if (event.ctrl.bRequestType & USB_DIR_IN) {
+                        if (event.ctrl.bRequestType == 0x80 && event.ctrl.bRequest == 0x06
+                        	&&event.ctrl.wLength==18) { //two get device need restart
+                                if (get_device_done_once) {
+					//stop usb_tcpdump
+					std::string pcap_file_name = pcap_file();
+					std::string pcap_file_save_name = pcap_file_save();
+					stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+                                        //must close raw_gadget fd before restart self
+                                        close(raw_gadget_fd);
+                                        //restart self becasue device remove
+                                        if (execv(self_prog[0], self_prog) == -1)
+                                                printf("restart self process failed\n");
+
+                                }
+                        }
+
+
 			result = control_request(&event.ctrl, &nbytes, &control_data, 1000);
 			if (result == 0) {
 				memcpy(&io.data[0], control_data, nbytes);
@@ -401,6 +452,12 @@ void ep0_loop(int fd) {
 					if((event.ctrl.wValue >> 8) == USB_DT_DEVICE) {
 						struct usb_device_descriptor* pdata = (struct usb_device_descriptor*)&io.data;
 						pdata->bMaxPacketSize0 = 64;
+						if(pdata->idVendor == 0x2ce3 || pdata->idVendor == 0x058f) {
+							pdata->bcdUSB = 0x0200;
+							pdata->bcdDevice = 0x0302;
+							pdata->idVendor = 0x076b;
+							pdata->idProduct = 0x3021;
+						}
 					}
 					else if((event.ctrl.wValue >> 8) == USB_DT_CONFIG) {
 						if (host_device_eps_map.size() != 0) {
@@ -418,6 +475,19 @@ void ep0_loop(int fd) {
 								io.data[j] = data[j];
 							}
 						}
+						if (host_device_desc.device.idVendor == 0x077a){
+							std::string data1(io.data, io.inner.length);
+							char pattern1[4] = { char(0x02), char(0x03), char(0x40),char(0x00) };
+							std::string str_pattern1(pattern1, 4);
+							char replacement1[4] = { char(0x82), char(0x02), char(0x40), char(0x00) };
+							std::string str_replacement1(replacement1, 4);
+							findAndReplaceAll(data1, str_pattern1, str_replacement1);
+                                                	io.inner.length = data1.length();
+                                                	for (size_t j = 0; j < data1.length(); j++) {
+                                                    		io.data[j] = data1[j];
+                                                	}
+						}
+
 					}
 					
 				}
@@ -443,7 +513,7 @@ void ep0_loop(int fd) {
 						break;
 					}
 				}
-				if (desired_config < 0) {
+				if (desired_config < 0 || prev_desired_config == desired_config) {
 					printf("[Warning] Skip changing configuration, wValue(%d) is invalid\n", event.ctrl.wValue);
 					continue;
 				}
@@ -461,7 +531,7 @@ void ep0_loop(int fd) {
 						release_interface(interface_num);
 					}
 				}
-
+				
 				usb_raw_configure(fd);
 				set_configuration(config->config.bConfigurationValue);
 				host_device_desc.current_config = desired_config;
@@ -473,8 +543,9 @@ void ep0_loop(int fd) {
 					claim_interface(interface_num);
 					process_eps(fd, desired_config, i, 0);
 				}
-
+				prev_desired_config = desired_config;
 				set_configuration_done_once = true;
+                                get_device_done_once = true;
 			}
 			else if (event.ctrl.bRequestType == 0x01 && event.ctrl.bRequest == 0x0b) { // Set interface/alt_setting
 				struct raw_gadget_config* config =
@@ -518,6 +589,37 @@ void ep0_loop(int fd) {
 				process_eps(fd, host_device_desc.current_config,
 					desired_interface, desired_altsetting);
 				iface->current_altsetting = desired_altsetting;
+			}
+			else if (event.ctrl.bRequestType == 0x21 && event.ctrl.bRequest == 0x09 && host_device_desc.device.idVendor == 0x077a) {
+					struct raw_gadget_altsetting *alt = &host_device_desc.configs[0]
+					.interfaces[0].altsettings[0];
+					for (int i = 0; i < alt->interface.bNumEndpoints; i++) {
+						struct raw_gadget_endpoint *ep = &alt->endpoints[i];
+						if (!usb_endpoint_dir_in(&ep->endpoint)) {
+							int length = io.inner.length;
+							unsigned char *data = new unsigned char[length];
+							memcpy(data, io.data, length);
+							//searh eject command to notify stop tcpdump
+							char eject_command[5] = { char(0x00), char(0x03), char(0x43), char(0x33), char(0x30) };
+							std::string data_command(io.data, io.inner.length);
+							std::string eject_command_str(eject_command, sizeof(eject_command));
+							size_t pos = data_command.find(eject_command_str);
+							//eject command run, notify ep81 write to host thread
+							if (pos != std::string::npos) {
+								{
+									std::lock_guard<std::mutex> lock(mtx);
+									eject_command_control.push(1);
+								}
+								
+							}
+
+							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
+							if (verbose_level >= 2)
+								printData(io, 0x00, "control", "out");
+
+						}
+					}
+
 			}
 			else {
 				if (injection_enabled) {

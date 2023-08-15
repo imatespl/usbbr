@@ -13,6 +13,8 @@
 #include <sys/stat.h>
 #include <linux/usb/ch9.h>
 #include <jsoncpp/json/json.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 extern int verbose_level;
 extern bool please_stop_ep0;
@@ -26,3 +28,12 @@ std::string hexToAscii(std::string input);
 int hexToDecimal(int input);
 
 void findAndReplaceAll(std::string& data, std::string toSearch, std::string replaceStr);
+
+extern char** self_prog;
+extern int bus_number;
+extern int raw_gadget_fd;
+extern pid_t pcap_pid;
+extern int start_tcpdump_usbmon(int bus_num, std::string pcap_file);
+extern int stop_tcpdump_usbmon(pid_t pcap_pid, std::string pcap_file, std::string pcap_file_save);
+extern std::string pcap_file();
+extern std::string pcap_file_save();

@@ -156,6 +156,7 @@ struct raw_gadget_device {
 extern struct raw_gadget_device host_device_desc;
 extern std::map<int, int> host_device_eps_map;
 
+
 /*----------------------------------------------------------------------*/
 
 enum usb_injection_flags {

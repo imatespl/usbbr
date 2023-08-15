@@ -2,15 +2,26 @@
 	"control": {
 		"modify": [
 			{
-				"enable": false,
-				"bRequestType": 0,
-				"bRequest": 0,
-				"wValue": 0,
+				"enable": true,
+				"bRequestType": 80,
+				"bRequest": 06,
+				"wValue": 200,
 				"wIndex": 0,
 				"wLength": 0,
-				"content_pattern": [],
-				"replacement": ""
-			}
+				"content_pattern": ["\\x03\\x04\\x00"],
+				"replacement": "\\x03\\x08\\x00"
+			},
+                        {
+                                "enable": true,
+                                "bRequestType": 80,
+                                "bRequest": 06,
+                                "wValue": 200,
+                                "wIndex": 0,
+                                "wLength": 0,
+                                "content_pattern": ["\\x02\\x10\\x00"],
+                                "replacement": "\\x02\\x40\\x00"
+                        }
+
 		],
 		"ignore": [
 			{

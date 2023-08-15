@@ -10,8 +10,8 @@ endif
 
 .PHONY: all clean
 
-usb-proxy: usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o
-	g++ usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o $(LDFLAG) -o usb-proxy
+usbbr: usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o
+	g++ usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o $(LDFLAG) -o usbbr
 
 %.o: %.cpp %.h
 	g++ $(CFLAGS) -c $<
@@ -21,4 +21,4 @@ usb-proxy: usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o
 
 clean:
 	-rm *.o
-	-rm usb-proxy
+	-rm usbbr

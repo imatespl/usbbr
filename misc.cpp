@@ -57,7 +57,7 @@ int start_tcpdump_usbmon(int bus_num, std::string pcap_file) {
 		execlp("/usr/bin/tcpdump", "tcpdump", "-i", usb_interface.c_str(), "-U", "-n", "-s0", "-w", pcap_file.c_str(), NULL);
 		return 1;
 	}
-	pcap_pid = child_pid;
+	return child_pid;
 	
 }
 

@@ -1,4 +1,5 @@
 #include <vector>
+#include <queue>
 
 #include "host-raw-gadget.h"
 #include "device-libusb.h"
@@ -162,7 +163,7 @@ void *ep_loop_write(void *arg) {
 				//thread
 				stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
 				//here not restart all process, need start tcpdump process 
-				start_tcpdump_usbmon(bus_number, pcap_file_name);
+				pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
 
 			}
 		}

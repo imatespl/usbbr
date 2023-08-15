@@ -109,7 +109,7 @@ int connect_device(int vendor_id, int product_id) {
 				bus_number = libusb_get_bus_number(dvc);
 				if ((bus_number == 3) || (bus_number == 6)) {
 					std::string pcap_file_name = pcap_file();
-					start_tcpdump_usbmon(bus_number, pcap_file_name);
+					pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
 					found = dvc;
 				} else
 					continue;

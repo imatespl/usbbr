@@ -35,5 +35,6 @@ extern int raw_gadget_fd;
 extern pid_t pcap_pid;
 extern int start_tcpdump_usbmon(int bus_num, std::string pcap_file);
 extern int stop_tcpdump_usbmon(pid_t pcap_pid, std::string pcap_file, std::string pcap_file_save);
+extern void stop_all_tcpdump_usbmon();
 extern std::string pcap_file();
 extern std::string pcap_file_save();

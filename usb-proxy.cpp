@@ -215,6 +215,8 @@ int main(int argc, char **argv)
 	int vendor_id = -1;
 	int product_id = -1;
 
+	//kill all tcpdump it may dead,not need
+	stop_all_tcpdump_usbmon();
 	//store argv to self_prog will use hotplug to restart self process
 	self_prog = new char* [argc + 1];
 	for (int i = 0; i < argc; i++) {

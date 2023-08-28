@@ -17,9 +17,9 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 	printf("Hotplug event\n");
 
 	//stop usb_tcpdump
-	std::string pcap_file_name = pcap_file();
-	std::string pcap_file_save_name = pcap_file_save();
-	stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+	//std::string pcap_file_name = pcap_file();
+	//std::string pcap_file_save_name = pcap_file_save();
+	//stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
 	//must close raw_gadget fd before restart self
 	close(raw_gadget_fd);
 	//restart self becasue device remove

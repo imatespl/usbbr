@@ -63,8 +63,12 @@ int start_tcpdump_usbmon(int bus_num, std::string pcap_file) {
 
 int stop_tcpdump_usbmon(pid_t pcap_pid, std::string pcap_file, std::string pcap_file_save) {
 	if (kill(pcap_pid, SIGTERM) != 0) {
-		printf("Kill pcap process failed\n");
-		return -1;
+		printf("Kill pcap process failed，try sigkill process fork\n");
+		if (kill(pcap_pid, SIGKILL) != 0) {
+			printf("Kill pcap process failed, use sigkill\n");
+			return -1;
+		}
+
 	}
 
 	// Wait for the child process to finish
@@ -74,6 +78,10 @@ int stop_tcpdump_usbmon(pid_t pcap_pid, std::string pcap_file, std::string pcap_
 	system(save_command.c_str());
 	return 0;
 	
+}
+//at process start clean all tcpdump process
+void stop_all_tcpdump_usbmon() {
+	system("killall -q -SIGKILL tcpdump");
 }
 
 std::string pcap_file() {

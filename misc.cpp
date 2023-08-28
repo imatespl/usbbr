@@ -74,7 +74,8 @@ int stop_tcpdump_usbmon(pid_t pcap_pid, std::string pcap_file, std::string pcap_
 	// Wait for the child process to finish
 	int status;
 	waitpid(pcap_pid, &status, 0);
-	std::string save_command = "mv " + pcap_file + " " + pcap_file_save;
+	std::string save_command = "if [[-s" + pcap_file + "]];then mv "
+					+ pcap_file + " " + pcap_file_save + ";fi";
 	system(save_command.c_str());
 	return 0;
 	

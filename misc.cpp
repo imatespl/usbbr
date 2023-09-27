@@ -74,8 +74,7 @@ int stop_tcpdump_usbmon(pid_t pcap_pid, std::string pcap_file, std::string pcap_
 	// Wait for the child process to finish
 	int status;
 	waitpid(pcap_pid, &status, 0);
-	std::string save_command = "if [[-s" + pcap_file + "]];then mv "
-					+ pcap_file + " " + pcap_file_save + ";fi";
+	std::string save_command = "pcap-process.sh "+pcap_file+" "+pcap_file_save+"&";
 	system(save_command.c_str());
 	return 0;
 	
@@ -86,7 +85,7 @@ void stop_all_tcpdump_usbmon() {
 }
 
 std::string pcap_file() {
-	return "/home/ftpusb/usb_running.pcap";
+	return "/data/usb_running.pcap";
 }
 
 std::string pcap_file_save() {
@@ -96,7 +95,7 @@ std::string pcap_file_save() {
 	std::string line;
 	std::getline(inputFile, line);
 	int num = std::stoi(line);
-	pcap_file_save = "/home/ftpusb/usbmon_finished" + line + ".pcap";
+	pcap_file_save = "/data/usbmon_finished" + line + ".pcap";
 	inputFile.close();
 	num++;
 	std::ofstream outputFile("/root/.pcap_file_save");

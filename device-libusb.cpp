@@ -17,9 +17,9 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 	printf("Hotplug event\n");
 
 	//stop usb_tcpdump
-	//std::string pcap_file_name = pcap_file();
-	//std::string pcap_file_save_name = pcap_file_save();
-	//stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+	std::string pcap_file_name = pcap_file();
+	std::string pcap_file_save_name = pcap_file_save();
+	stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
 	//must close raw_gadget fd before restart self
 	close(raw_gadget_fd);
 	//restart self becasue device remove
@@ -304,16 +304,16 @@ void send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 		fprintf(stderr, "Transfer error sending on EP%02x: %s, close raw_gadget and restart self process\n",
 				endpoint, libusb_strerror((libusb_error)result));
 		//stop usb_tcpdump
-		std::string pcap_file_name = pcap_file();
-		std::string pcap_file_save_name = pcap_file_save();
-		stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+		//std::string pcap_file_name = pcap_file();
+		//std::string pcap_file_save_name = pcap_file_save();
+		//stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
 		//device may error restart self process to hanle new device
 		//must close raw_gadget fd before restart self
-		close(raw_gadget_fd);
+		//close(raw_gadget_fd);
 		//restart self becasue device remove
-		if (execv(self_prog[0], self_prog) == -1) {
-			printf("restart self process failed\n");
-		}
+		//if (execv(self_prog[0], self_prog) == -1) {
+	//		printf("restart self process failed\n");
+	//	}
 	}
 }
 
@@ -355,15 +355,15 @@ void receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
 		fprintf(stderr, "Transfer error receiving on EP%02x: %s, close raw_gadget and restart self process\n",
 				endpoint, libusb_strerror((libusb_error)result));
 		//stop usb_tcpdump
-		std::string pcap_file_name = pcap_file();
-		std::string pcap_file_save_name = pcap_file_save();
-		stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+		//std::string pcap_file_name = pcap_file();
+		//std::string pcap_file_save_name = pcap_file_save();
+		//stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
 		//device may error restart self process to hanle new device
 		//must close raw_gadget fd before restart self
-		close(raw_gadget_fd);
+		//close(raw_gadget_fd);
 		//restart self becasue device remove
-		if (execv(self_prog[0], self_prog) == -1) {
-			printf("restart self process failed\n");
-		}
+		//if (execv(self_prog[0], self_prog) == -1) {
+		//	printf("restart self process failed\n");
+		//}
 	}
 }

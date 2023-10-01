@@ -105,3 +105,33 @@ std::string pcap_file_save() {
 	return pcap_file_save;
 
 }
+size_t get_filesize(const char* file_name) {
+	if (file_name == NULL)
+		return 0;
+	struct stat statbuf;
+	stat(file_name, &statbuf);
+	if (S_ISREG(statbuf.st_mode)) { //file exist
+        // Get the file size from the stat structure
+        return statbuf.st_size;
+    } else {
+        return 0;
+    }
+
+} 
+void *pcap_file_max_and_resave(void *arg __attribute__((unused))) {
+	std::string pcap_file_name = pcap_file();
+	size_t pcap_filesize;
+	while (true) {
+		usleep(2000000);
+		pcap_filesize = get_filesize(pcap_file_name.c_str());
+		if (pcap_filesize > 1024000) {
+			{
+				std::lock_guard<std::mutex> lock(pcap_mtx);
+				std::string pcap_file_save_name = pcap_file_save();
+				printf("pcap is large 1M, size is %d resave new file\n", pcap_filesize);
+				stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+				pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
+			}
+		}
+	}
+}

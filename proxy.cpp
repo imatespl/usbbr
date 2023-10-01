@@ -157,13 +157,17 @@ void *ep_loop_write(void *arg) {
 			if (item == 1) {
 				//stop usb_tcpdump
 				std::string pcap_file_name = pcap_file();
-				std::string pcap_file_save_name = pcap_file_save();
-				//stop tcpdump will cause usb_raw_event_fetch receive EINTR,
-				//will casue EP0 thread stop, should catch this except in EP0
-				//thread
-				stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-				//here not restart all process, need start tcpdump process 
-				pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
+				
+				{
+					std::lock_guard<std::mutex> lock(pcap_mtx);
+					std::string pcap_file_save_name = pcap_file_save();
+					//stop tcpdump will cause usb_raw_event_fetch receive EINTR,
+					//will casue EP0 thread stop, should catch this except in EP0
+					//thread
+					stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+					//here not restart all process, need start tcpdump process 
+					pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
+				}
 
 			}
 		}

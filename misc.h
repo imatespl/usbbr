@@ -15,6 +15,7 @@
 #include <jsoncpp/json/json.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <mutex>
 
 extern int verbose_level;
 extern bool please_stop_ep0;
@@ -38,3 +39,6 @@ extern int stop_tcpdump_usbmon(pid_t pcap_pid, std::string pcap_file, std::strin
 extern void stop_all_tcpdump_usbmon();
 extern std::string pcap_file();
 extern std::string pcap_file_save();
+extern std::mutex pcap_mtx;
+extern pthread_t pcap_monitor_size_thread;
+extern void* pcap_file_max_and_resave(void *arg __attribute__((unused)));

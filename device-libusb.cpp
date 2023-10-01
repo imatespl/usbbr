@@ -17,14 +17,18 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 	printf("Hotplug event\n");
 
 	//stop usb_tcpdump
+	
 	std::string pcap_file_name = pcap_file();
-	std::string pcap_file_save_name = pcap_file_save();
-	stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-	//must close raw_gadget fd before restart self
-	close(raw_gadget_fd);
-	//restart self becasue device remove
-	if (execv(self_prog[0], self_prog) == -1) {
-		printf("restart self process failed\n");
+	{
+		std::lock_guard<std::mutex> lock(pcap_mtx);
+		std::string pcap_file_save_name = pcap_file_save();
+		stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
+		//must close raw_gadget fd before restart self
+		close(raw_gadget_fd);
+		//restart self becasue device remove
+		if (execv(self_prog[0], self_prog) == -1) {
+			printf("restart self process failed\n");
+		}
 	}
 	return 0;
 }
@@ -107,12 +111,12 @@ int connect_device(int vendor_id, int product_id) {
 				//orangepc just proxy usb port 3(usb2.0) port 6(usb1.1)
 				//phy port is port 3
 				bus_number = libusb_get_bus_number(dvc);
-				if ((bus_number == 3) || (bus_number == 6)) {
-					std::string pcap_file_name = pcap_file();
-					pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
-					found = dvc;
-				} else
-					continue;
+				std::string pcap_file_name = pcap_file();
+				pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
+				pthread_create(&pcap_monitor_size_thread, 0,
+					pcap_file_max_and_resave, nullptr);
+				found = dvc;
+
 
 				break;
 			}

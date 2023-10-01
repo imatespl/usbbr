@@ -11,6 +11,8 @@ char** self_prog = NULL;
 int raw_gadget_fd = 0;
 int bus_number = 0;
 int pcap_pid = -1;
+std::mutex pcap_mtx;
+pthread_t pcap_monitor_size_thread;
 std::map<int, int> host_device_eps_map;
 std::set<int> dev_endpoint_out_list;
 std::set<int> dev_endpoint_in_list;
@@ -347,6 +349,10 @@ int main(int argc, char **argv)
 		pthread_join(hotplug_monitor_thread, NULL)) {
 		fprintf(stderr, "Error join hotplug_monitor_thread\n");
 	}
+	if (pcap_monitor_size_thread &&
+		pthread_join(pcap_monitor_size_thread, NULL)) {
+			fprintf(stderr, "Error join pcap_monitor_size_thread\n");
+		}
 
 	return 0;
 }

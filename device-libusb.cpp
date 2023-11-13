@@ -130,7 +130,7 @@ int connect_device(int vendor_id, int product_id) {
 		if (verbose_level && vendor_id != -1 && product_id != -1)
 			printf("Target device not found\n");
 		libusb_free_device_list(devs, 1);
-		usleep(2000);
+		usleep(20000);
 	}
 
 	result = libusb_open(found, &dev_handle);
@@ -144,7 +144,7 @@ int connect_device(int vendor_id, int product_id) {
 		return result;
 	}
 
-	result = libusb_set_auto_detach_kernel_driver(dev_handle, 1);
+	result = libusb_set_auto_detach_kernel_driver(dev_handle, 0);
 	if (result != LIBUSB_SUCCESS) {
 		fprintf(stderr, "libusb_set_auto_detach_kernel_driver() failed: %s\n",
 				libusb_strerror((libusb_error)result));

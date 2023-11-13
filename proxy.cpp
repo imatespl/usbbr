@@ -557,9 +557,9 @@ void ep0_loop(int fd) {
 			}
 		}
 		else {
-			rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 
-			if (event.ctrl.bRequestType == 0x00 && event.ctrl.bRequest == 0x09) { // Set configuration
+			if ((event.ctrl.bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD &&
+					event.ctrl.bRequest == USB_REQ_SET_CONFIGURATION) { // Set configuration
 				int desired_config = -1;
 				for (int i = 0; i < host_device_desc.device.bNumConfigurations; i++) {
 					if (host_device_desc.configs[i].config.bConfigurationValue == event.ctrl.wValue) {
@@ -596,13 +596,17 @@ void ep0_loop(int fd) {
 					int interface_num = iface->altsettings[0].interface.bInterfaceNumber;
 					claim_interface(interface_num);
 					process_eps(fd, desired_config, i, 0);
+					usleep(10000); // Give threads time to spawn.
 				}
 				prev_desired_config = desired_config;
 				set_configuration_done_once = true;
-                                get_device_done_once = true;
+                get_device_done_once = true;
+				// Ack request after spawning endpoint threads.
+				rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 			}
-			else if (event.ctrl.bRequestType == 0x01 && event.ctrl.bRequest == 0x0b) { // Set interface/alt_setting
-				struct raw_gadget_config* config =
+			else if ((event.ctrl.bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD &&
+					event.ctrl.bRequest == USB_REQ_SET_INTERFACE) {
+				struct raw_gadget_config *config =
 					&host_device_desc.configs[host_device_desc.current_config];
 
 				int desired_interface = -1;
@@ -634,15 +638,26 @@ void ep0_loop(int fd) {
 
 				struct raw_gadget_altsetting *alt = &iface->altsettings[desired_altsetting];
 
-				printf("Changing interface/altsetting\n");
+				if (desired_altsetting == iface->current_altsetting) {
+					printf("Interface/altsetting already set\n");
+					// But lets propagate the request to the device.
+					set_interface_alt_setting(alt->interface.bInterfaceNumber,
+						alt->interface.bAlternateSetting);
+				}
+				else {
+					printf("Changing interface/altsetting\n");
+					terminate_eps(fd, host_device_desc.current_config,
+						desired_interface, iface->current_altsetting);
+					set_interface_alt_setting(alt->interface.bInterfaceNumber,
+						alt->interface.bAlternateSetting);
+					process_eps(fd, host_device_desc.current_config,
+						desired_interface, desired_altsetting);
+					iface->current_altsetting = desired_altsetting;
+					usleep(10000); // Give threads time to spawn.
+				}
 
-				terminate_eps(fd, host_device_desc.current_config,
-					desired_interface, iface->current_altsetting);
-				set_interface_alt_setting(alt->interface.bInterfaceNumber,
-					alt->interface.bAlternateSetting);
-				process_eps(fd, host_device_desc.current_config,
-					desired_interface, desired_altsetting);
-				iface->current_altsetting = desired_altsetting;
+				// Ack request after spawning endpoint threads.
+				rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 			}
 			else if (event.ctrl.bRequestType == 0x21 && event.ctrl.bRequest == 0x09 && host_device_desc.device.idVendor == 0x077a) {
 					struct raw_gadget_altsetting *alt = &host_device_desc.configs[0]
@@ -693,6 +708,8 @@ void ep0_loop(int fd) {
 						break;
 					}
 				}
+				// Retrieve data for sending request to proxied device.
+				rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 
 				memcpy(control_data, io.data, event.ctrl.wLength);
 

@@ -106,9 +106,9 @@ void printData(struct usb_raw_transfer_io io, __u8 bEndpointAddress, std::string
 
 void *ep_loop_write(void *arg) {
 	// Enable asynchronous cancellation
-	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	//pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	// Set cancellation type to deferred cancellation
-	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+	//pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	struct thread_info thread_info = *((struct thread_info*) arg);
 	int fd = thread_info.fd;
 	int ep_num = thread_info.ep_num;
@@ -123,7 +123,7 @@ void *ep_loop_write(void *arg) {
 
 	while (!please_stop_eps) {
 		// Check for cancellation
-		pthread_testcancel();
+		//pthread_testcancel();
 		assert(ep_num != -1);
 		if (data_queue->size() == 0) {
 			usleep(100);
@@ -140,7 +140,16 @@ void *ep_loop_write(void *arg) {
 
 		if (ep.bEndpointAddress & USB_DIR_IN) {
 			int rv = usb_raw_ep_write(fd, (struct usb_raw_ep_io *)&io);
-			if (rv >= 0) {
+			if (rv < 0 && errno == ESHUTDOWN) {
+				printf("EP%x(%s_%s): device likely reset, stopping thread\n",
+					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
+				break;
+			}
+			else if (rv < 0) {
+				perror("usb_raw_ep_write()");
+				exit(EXIT_FAILURE);
+			}
+			else {
 				printf("EP%x(%s_%s): wrote %d bytes to host\n", ep.bEndpointAddress,
 					transfer_type.c_str(), dir.c_str(), rv);
 			}
@@ -175,7 +184,12 @@ void *ep_loop_write(void *arg) {
 			int length = io.inner.length;
 			unsigned char *data = new unsigned char[length];
 			memcpy(data, io.data, length);
-			send_data(ep.bEndpointAddress, ep.bmAttributes, data, length);
+			int rv = send_data(ep.bEndpointAddress, ep.bmAttributes, data, length);
+			if (rv == LIBUSB_ERROR_NO_DEVICE) {
+				printf("EP%x(%s_%s): device likely reset, stopping thread\n",
+					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
+				break;
+			}
 
 			if (data)
 				delete[] data;
@@ -189,9 +203,9 @@ void *ep_loop_write(void *arg) {
 
 void *ep_loop_read(void *arg) {
 	// Enable asynchronous cancellation
-	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	//pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	// Set cancellation type to deferred cancellation
-	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+	//pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	struct thread_info thread_info = *((struct thread_info*) arg);
 	int fd = thread_info.fd;
 	int ep_num = thread_info.ep_num;
@@ -206,7 +220,7 @@ void *ep_loop_read(void *arg) {
 
 	while (!please_stop_eps) {
 		// Check for cancellation
-		pthread_testcancel();
+		//pthread_testcancel();
 		assert(ep_num != -1);
 		struct usb_raw_transfer_io io;
 
@@ -219,7 +233,12 @@ void *ep_loop_read(void *arg) {
 				continue;
 			}
 
-			receive_data(ep.bEndpointAddress, ep.bmAttributes, ep.wMaxPacketSize, &data, &nbytes, 0);
+			int rv = receive_data(ep.bEndpointAddress, ep.bmAttributes, ep.wMaxPacketSize, &data, &nbytes, 0);
+			if (rv == LIBUSB_ERROR_NO_DEVICE) {
+				printf("EP%x(%s_%s): device likely reset, stopping thread\n",
+					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
+				break;
+			}
 
 			if (nbytes >= 0) {
 				memcpy(io.data, data, nbytes);
@@ -248,7 +267,16 @@ void *ep_loop_read(void *arg) {
 			io.inner.length = sizeof(io.data);
 
 			int rv = usb_raw_ep_read(fd, (struct usb_raw_ep_io *)&io);
-			if (rv >= 0) {
+			if (rv < 0 && errno == ESHUTDOWN) {
+				printf("EP%x(%s_%s): device likely reset, stopping thread\n",
+					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
+				break;
+			}
+			else if (rv < 0) {
+				perror("usb_raw_ep_read()");
+				exit(EXIT_FAILURE);
+			}
+			else {
 				printf("EP%x(%s_%s): read %d bytes from host\n", ep.bEndpointAddress,
 						transfer_type.c_str(), dir.c_str(), rv);
 				io.inner.length = rv;
@@ -338,34 +366,24 @@ void terminate_eps(int fd, int config, int interface, int altsetting) {
 	struct raw_gadget_altsetting *alt = &host_device_desc.configs[config]
 					.interfaces[interface].altsettings[altsetting];
 
-
+	please_stop_eps = true;
+	
 	for (int i = 0; i < alt->interface.bNumEndpoints; i++) {
 		struct raw_gadget_endpoint *ep = &alt->endpoints[i];
-		/*When a child thread uses wait_for_completion_interruptible()
-		and the main thread calls pthread_join(), the main thread may
-		get blocked indefinitely because wait_for_completion_interruptible()
-		does not return until the completion of the associated task or until
-		it is interrupted.This situation occurs because pthread_join() waits
-		for the child thread to exit before continuing.*/
-		if (ep->thread_read) {
-			pthread_cancel(ep->thread_read);
-			if (pthread_join(ep->thread_read, NULL))
-				fprintf(stderr, "Error join thread_read\n");
+		if (ep->thread_read && pthread_join(ep->thread_read, NULL)) {
+			fprintf(stderr, "Error join thread_read\n");
 		}
-		if (ep->thread_write) {
-			pthread_cancel(ep->thread_write);
-			if (pthread_join(ep->thread_write, NULL))
-				fprintf(stderr, "Error join thread_write\n");
+		if (ep->thread_write && pthread_join(ep->thread_write, NULL)) {
+			fprintf(stderr, "Error join thread_write\n");
 		}
 		ep->thread_read = 0;
 		ep->thread_write = 0;
-
 		usb_raw_ep_disable(fd, ep->thread_info.ep_num);
 		ep->thread_info.ep_num = -1;
-
 		delete ep->thread_info.data_queue;
 		delete ep->thread_info.data_mutex;
 	}
+	please_stop_eps = false;
 
 }
 
@@ -395,6 +413,37 @@ void ep0_loop(int fd) {
 
 			//printf("End for EP0, thread id(%d)\n", gettid());
 			//return;
+		}
+		
+		// Normally, we would only need to check for USB_RAW_EVENT_RESET to handle a reset event.
+		// However, dwc2 is buggy and it reports a disconnect event instead of a reset.
+		if (event.inner.type == USB_RAW_EVENT_RESET || event.inner.type == USB_RAW_EVENT_DISCONNECT) {
+			printf("Resetting device\n");
+			// Normally, we would need to stop endpoint threads first and only then
+			// reset the device. However, libusb does not allow interrupting queued
+			// requests submitted via sync I/O. Thus, we reset the proxied device to
+			// force libusb to interrupt the requests and allow the endpoint threads
+			// to exit on please_stop_eps checks.
+			if (set_configuration_done_once)
+				please_stop_eps = true;
+			reset_device();
+			if (set_configuration_done_once) {
+				struct raw_gadget_config *config = &host_device_desc.configs[host_device_desc.current_config];
+				printf("Stopping endpoint threads\n");
+				for (int i = 0; i < config->config.bNumInterfaces; i++) {
+					struct raw_gadget_interface *iface = &config->interfaces[i];
+					int interface_num = iface->altsettings[iface->current_altsetting]
+						.interface.bInterfaceNumber;
+					terminate_eps(fd, host_device_desc.current_config, i,
+							iface->current_altsetting);
+					release_interface(interface_num);
+					iface->current_altsetting = 0;
+				}
+				printf("Endpoint threads stopped\n");
+				host_device_desc.current_config = 0;
+				set_configuration_done_once = false;
+			}
+			continue;
 		}
 
 		if (event.inner.type != USB_RAW_EVENT_CONTROL)

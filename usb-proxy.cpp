@@ -6,7 +6,7 @@
 
 int verbose_level = 0;
 bool please_stop_ep0 = false;
-bool please_stop_eps = false;
+volatile bool please_stop_eps = false; // Use volatile to mark as atomic.
 char** self_prog = NULL;
 int raw_gadget_fd = 0;
 int bus_number = 0;

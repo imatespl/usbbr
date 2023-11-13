@@ -21,7 +21,7 @@ void release_interface(int interface);
 void set_interface_alt_setting(int interface, int altsetting);
 int control_request(const usb_ctrlrequest *setup_packet, int *nbytes,
 			unsigned char **dataptr, int timeout);
-void send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
+int send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 			int length);
-void receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
+int receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
 			uint8_t **dataptr, int *length, int timeout);

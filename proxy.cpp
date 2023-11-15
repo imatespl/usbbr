@@ -462,21 +462,21 @@ void ep0_loop(int fd) {
 
 		int rv = -1;
 		if (event.ctrl.bRequestType & USB_DIR_IN) {
-                        if (event.ctrl.bRequestType == 0x80 && event.ctrl.bRequest == 0x06
+        	if (event.ctrl.bRequestType == 0x80 && event.ctrl.bRequest == 0x06
                         	&&event.ctrl.wLength==18) { //two get device need restart
-                                if (get_device_done_once) {
+				if (get_device_done_once) {
 					//stop usb_tcpdump
 					std::string pcap_file_name = pcap_file();
 					std::string pcap_file_save_name = pcap_file_save();
 					stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-                                        //must close raw_gadget fd before restart self
-                                        close(raw_gadget_fd);
-                                        //restart self becasue device remove
-                                        if (execv(self_prog[0], self_prog) == -1)
-                                                printf("restart self process failed\n");
+					//must close raw_gadget fd before restart self
+					close(raw_gadget_fd);
+					//restart self becasue device remove
+					if (execv(self_prog[0], self_prog) == -1)
+						printf("restart self process failed\n");
 
-                                }
-                        }
+				}
+            }
 
 
 			result = control_request(&event.ctrl, &nbytes, &control_data, 1000);
@@ -662,6 +662,8 @@ void ep0_loop(int fd) {
 			else if (event.ctrl.bRequestType == 0x21 && event.ctrl.bRequest == 0x09 && host_device_desc.device.idVendor == 0x077a) {
 					struct raw_gadget_altsetting *alt = &host_device_desc.configs[0]
 					.interfaces[0].altsettings[0];
+					// Retrieve data for sending request to big atm cart endpoint 0x02
+					rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 					for (int i = 0; i < alt->interface.bNumEndpoints; i++) {
 						struct raw_gadget_endpoint *ep = &alt->endpoints[i];
 						if (!usb_endpoint_dir_in(&ep->endpoint)) {

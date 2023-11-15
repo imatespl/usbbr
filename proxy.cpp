@@ -104,6 +104,15 @@ void printData(struct usb_raw_transfer_io io, __u8 bEndpointAddress, std::string
 	printf("\n");
 }
 
+void print_data_to_endpoint(struct usb_raw_transfer_io io, __u8 from_endpoint_address, __u8 to_endpoint_address, std::string transfer_type, std::string dir) {
+	printf("Sending data from EP%x to EP%x(%s_%s):", from_endpoint_address, to_endpoint_address,
+		transfer_type.c_str(), dir.c_str());
+	for (unsigned int i = 0; i < io.inner.length; i++) {
+		printf(" %02hhx", (unsigned)io.data[i]);
+	}
+	printf("\n");
+}
+
 void *ep_loop_write(void *arg) {
 	// Enable asynchronous cancellation
 	//pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
@@ -462,7 +471,7 @@ void ep0_loop(int fd) {
 
 		int rv = -1;
 		if (event.ctrl.bRequestType & USB_DIR_IN) {
-        	if (event.ctrl.bRequestType == 0x80 && event.ctrl.bRequest == 0x06
+			if (event.ctrl.bRequestType == 0x80 && event.ctrl.bRequest == 0x06
                         	&&event.ctrl.wLength==18) { //two get device need restart
 				if (get_device_done_once) {
 					//stop usb_tcpdump
@@ -476,7 +485,7 @@ void ep0_loop(int fd) {
 						printf("restart self process failed\n");
 
 				}
-            }
+			}
 
 
 			result = control_request(&event.ctrl, &nbytes, &control_data, 1000);
@@ -600,7 +609,7 @@ void ep0_loop(int fd) {
 				}
 				prev_desired_config = desired_config;
 				set_configuration_done_once = true;
-                get_device_done_once = true;
+				get_device_done_once = true;
 				// Ack request after spawning endpoint threads.
 				rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 			}
@@ -686,7 +695,7 @@ void ep0_loop(int fd) {
 
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
 							if (verbose_level >= 2)
-								printData(io, 0x00, "control", "out");
+								print_data_to_endpoint(io, 0x00, ep->endpoint.bEndpointAddress, "control_to_int", "out");
 
 						}
 					}

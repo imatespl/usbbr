@@ -15,6 +15,7 @@ extern struct libusb_config_descriptor		**device_config_desc;
 extern pthread_t hotplug_monitor_thread;
 
 int connect_device(int vendorId, int productId);
+void reset_device();
 void set_configuration(int configuration);
 void claim_interface(int interface);
 void release_interface(int interface);

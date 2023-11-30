@@ -557,22 +557,10 @@ void ep0_loop(int fd) {
 				} 
 				else if ((event.ctrl.bRequestType & USB_TYPE_MASK) == USB_TYPE_CLASS &&
 					event.ctrl.bRequest == USB_REQ_GET_MAX_LUN) {
+					struct raw_gadget_config *config = &host_device_desc.configs[desired_config];
 					for (int i = 0; i < config->config.bNumInterfaces; i++) {
-						struct raw_gadget_interface *iface = &config->interfaces[i];
-						iface->current_altsetting = 0;
-						int interface_num = iface->altsettings[0].interface.bInterfaceNumber;
-						int interface_class = iface->altsettings[0].interface.bInterfaceClass;
-						
-						claim_interface(interface_num);
-						// mass storage need wait control request get max lun,
-						// then start eps threads.
-						if (interface_class == 0x08) { // mass storage device
-							continue;
-						}
-						else {
-							process_eps(fd, desired_config, i, 0);
-							usleep(10000); // Give threads time to spawn.
-						}
+						process_eps(fd, desired_config, i, 0);
+						usleep(10000); // Give threads time to spawn.
 					}
 				}
 

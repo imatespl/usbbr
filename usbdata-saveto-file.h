@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <vector>
 
+//pcap file name
+inline const std::string  PCAP_FILE "/data/usb_running.pcap"
+
 /*
  * possible transfer mode
  */
@@ -63,11 +66,23 @@ typedef struct _usb_header_mmapped {
 	uint32_t  xfer_flags;   /* copy of URB's transfer flags */
 	uint32_t  ndesc;        /* number of isochronous descriptors */
 } pcap_usb_header_mmapped;
+typedef struct __pcap_usb_data {
+	uint8_t    event_type;
+	uint8_t    transfer_type;
+	uint8_t    endpoint_number;
+	uint8_t    device_address;
+	uint16_t   bus_id;
+	uint32_t   data_len;
+	bool       isNeedResaveFile;
+	std::vector<unsigned char> data;
+} pcap_usb_data;
 
+void usb_linux_64_byte_header(pcap_usb_header_mmapped* pusbhdr, pcap_usb_data* pud);
 
-
-std::queue<std::vector<unsigned char>> usbDataQueue;
+std::deque<pcap_usb_data> usbDataQueue;
 std::mutex usbDataMutex;
-std::condition_variable usbDataCondition; #pragma once
+std::condition_variable usbDataCondition; //pragma once
 
 bool isDataProcessingDone = false;
+void writeUSBPcapThread();
+void sendDataToPcapFile(pcap_usb_data* pud);

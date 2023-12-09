@@ -9,7 +9,6 @@ bool please_stop_ep0 = false;
 volatile bool please_stop_eps = false; // Use volatile to mark as atomic.
 char** self_prog = NULL;
 int raw_gadget_fd = 0;
-int bus_number = 0;
 int pcap_pid = -1;
 std::mutex pcap_mtx;
 pthread_t pcap_monitor_size_thread;
@@ -169,11 +168,11 @@ int setup_host_usb_desc() {
 int set_host_device_eps_map(int fd) {
 	struct usb_raw_eps_info info;
 	memset(&info, 0, sizeof(info));
-	
+
 	int num = usb_raw_eps_info(fd, &info);
 	std::vector<int> raw_eps_addr_in;
 	std::vector<int> raw_eps_addr_out;
-	
+
 	for (int i = 0; i < num; i++) {
 		if (info.eps[i].caps.dir_out) {
 			int info_endpoint_address = info.eps[i].addr | USB_DIR_OUT;
@@ -218,8 +217,6 @@ int main(int argc, char **argv)
 	int vendor_id = -1;
 	int product_id = -1;
 
-	//kill all tcpdump it may dead,not need
-	stop_all_tcpdump_usbmon();
 	//store argv to self_prog will use hotplug to restart self process
 	self_prog = new char* [argc + 1];
 	for (int i = 0; i < argc; i++) {
@@ -309,6 +306,8 @@ int main(int argc, char **argv)
 		ifs.close();
 	}
 
+	//start write pcap thread
+	std::thread writerThread(writeUSBPcapThread);
 	while (connect_device(vendor_id, product_id)) {
 		sleep(1);
 	}
@@ -352,10 +351,6 @@ int main(int argc, char **argv)
 		pthread_join(hotplug_monitor_thread, NULL)) {
 		fprintf(stderr, "Error join hotplug_monitor_thread\n");
 	}
-	if (pcap_monitor_size_thread &&
-		pthread_join(pcap_monitor_size_thread, NULL)) {
-			fprintf(stderr, "Error join pcap_monitor_size_thread\n");
-		}
-
+	writerThread.join();
 	return 0;
 }

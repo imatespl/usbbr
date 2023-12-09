@@ -8,6 +8,9 @@ extern libusb_device			**devs;
 extern libusb_device_handle		*dev_handle;
 extern libusb_context			*context;
 extern libusb_hotplug_callback_handle	callback_handle;
+//bus id and device address need for write pcap file
+extern uint8_t bus_id;
+extern uint8_t device_address;
 
 extern struct libusb_device_descriptor		device_device_desc;
 extern struct libusb_config_descriptor		**device_config_desc;

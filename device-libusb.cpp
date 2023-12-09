@@ -4,6 +4,8 @@ libusb_device 			**devs;
 libusb_device_handle 		*dev_handle;
 libusb_context 			*context = NULL;
 libusb_hotplug_callback_handle	callback_handle = -1;
+uint8_t    bus_id;
+uint8_t    device_address;
 
 struct libusb_device_descriptor		device_device_desc;
 struct libusb_config_descriptor		**device_config_desc;
@@ -17,7 +19,7 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 	printf("Hotplug event\n");
 
 	//stop usb_tcpdump
-	
+
 	std::string pcap_file_name = pcap_file();
 	{
 		std::lock_guard<std::mutex> lock(pcap_mtx);
@@ -106,22 +108,19 @@ int connect_device(int vendor_id, int product_id) {
 
 			if (device_device_desc.bDeviceClass == LIBUSB_CLASS_HUB)
 				continue;
-			
+
 			if (vendor_id == -1 && product_id == -1) {
 				//orangepc just proxy usb port 3(usb2.0) port 6(usb1.1)
 				//phy port is port 3
 				bus_number = libusb_get_bus_number(dvc);
-				std::string pcap_file_name = pcap_file();
-				pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
-				pthread_create(&pcap_monitor_size_thread, 0,
-					pcap_file_max_and_resave, nullptr);
+				device_address = libusb_get_device_address(dvc);
 				found = dvc;
-
-
 				break;
 			}
 			else if ((vendor_id == device_device_desc.idVendor || vendor_id == LIBUSB_HOTPLUG_MATCH_ANY) &&
 				(product_id == device_device_desc.idProduct || product_id == LIBUSB_HOTPLUG_MATCH_ANY)) {
+				bus_number = libusb_get_bus_number(dvc);
+				device_address = libusb_get_device_address(dvc);
 				found = dvc;
 				break;
 			}

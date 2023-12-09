@@ -5,9 +5,10 @@
 #include "device-libusb.h"
 #include "misc.h"
 #include "regex"
+#include "usbdata-saveto-file.h"
 
 std::mutex mtx;
-std::queue<int> eject_command_control;
+bool eject_command_send = false;
 
 void injection(struct usb_raw_transfer_io &io, Json::Value patterns, std::string replacement_hex, bool &data_modified) {
 	std::string data(io.data, io.inner.length);
@@ -163,31 +164,7 @@ void *ep_loop_write(void *arg) {
 					transfer_type.c_str(), dir.c_str(), rv);
 			}
 
-			//stop usb tcpdump when write eject command  response
-			int item = 0;
-			{
-				std::lock_guard<std::mutex> lock(mtx);
-				if (!eject_command_control.empty()) {
-					item = eject_command_control.front();
-					eject_command_control.pop();
-				}
-			}
-			if (item == 1) {
-				//stop usb_tcpdump
-				std::string pcap_file_name = pcap_file();
-				
-				{
-					std::lock_guard<std::mutex> lock(pcap_mtx);
-					std::string pcap_file_save_name = pcap_file_save();
-					//stop tcpdump will cause usb_raw_event_fetch receive EINTR,
-					//will casue EP0 thread stop, should catch this except in EP0
-					//thread
-					stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-					//here not restart all process, need start tcpdump process 
-					pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
-				}
 
-			}
 		}
 		else {
 			int length = io.inner.length;
@@ -199,7 +176,32 @@ void *ep_loop_write(void *arg) {
 					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
 				break;
 			}
-
+			std::vector data_vec(data, length);
+			pcap_usb_data pud = {
+				.event_type = URB_COMPLETE,
+				.transfer_type = URB_INTERRUPT;
+				.endpoint_number = ep.bEndpointAddress;
+				.device_address = device_address;
+				.bus_id = bus_number,
+				.data_len = length,
+				.isNeedResaveFile = false,
+				.data = data_vec;
+			}
+			switch (transfer_type)
+			{
+			case "isoc":
+				pud.transfer_type = URB_ISOCHRONOUS;
+				break;
+			case "bulk":
+				pud.transfer_type = URB_BULK;
+				break;
+			case "int":
+				pud.transfer_type = URB_INTERRUPT;
+				break;
+			default:
+				break;
+			}
+			sendDataToPcapFile(&pud);
 			if (data)
 				delete[] data;
 		}
@@ -223,6 +225,7 @@ void *ep_loop_read(void *arg) {
 	std::string dir = thread_info.dir;
 	std::deque<usb_raw_transfer_io> *data_queue = thread_info.data_queue;
 	std::mutex *data_mutex = thread_info.data_mutex;
+	pcap_usb_data pud;
 
 	printf("Start reading thread for EP%02x, thread id(%d)\n",
 		ep.bEndpointAddress, gettid());
@@ -248,7 +251,41 @@ void *ep_loop_read(void *arg) {
 					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
 				break;
 			}
+			std::vector data_vec(data, nbytes);
+			pcap_usb_data pud = {
+				.event_type = URB_COMPLETE,
+				.transfer_type = URB_INTERRUPT;
+				.endpoint_number = ep.bEndpointAddress;
+				.device_address = device_address;
+				.bus_id = bus_number,
+				.data_len = nbytes,
+				.isNeedResaveFile = false,
+				.data = data_vec;
+			}
+			switch (transfer_type)
+			{
+			case "isoc":
+				pud.transfer_type = URB_ISOCHRONOUS;
+				break;
+			case "bulk":
+				pud.transfer_type = URB_BULK;
+				break;
+			case "int":
+				pud.transfer_type = URB_INTERRUPT;
+				break;
+			default:
+				break;
+			}
+			//stop usb tcpdump when write eject command  response
+			{
+				std::lock_guard<std::mutex> lock(mtx);
+				if (eject_command_send) {
+					pud.isNeedResaveFile = true
+					eject_command_send = false;
+				}
 
+			}
+			sendDataToPcapFile(&pud);
 			if (nbytes >= 0) {
 				memcpy(io.data, data, nbytes);
 				io.inner.ep = ep_num;
@@ -352,8 +389,8 @@ void process_eps(int fd, int config, int interface, int altsetting) {
 		}
 		else {
 			ep->thread_info.ep_num = usb_raw_ep_enable(fd, &ep->thread_info.endpoint);
-		}			
-		
+		}
+
 		printf("%s_%s: addr = %u, ep = #%d\n",
 			ep->thread_info.transfer_type.c_str(),
 			ep->thread_info.dir.c_str(),
@@ -376,7 +413,7 @@ void terminate_eps(int fd, int config, int interface, int altsetting) {
 					.interfaces[interface].altsettings[altsetting];
 
 	please_stop_eps = true;
-	
+
 	for (int i = 0; i < alt->interface.bNumEndpoints; i++) {
 		struct raw_gadget_endpoint *ep = &alt->endpoints[i];
 		if (ep->thread_read && pthread_join(ep->thread_read, NULL)) {
@@ -415,15 +452,15 @@ void ep0_loop(int fd) {
 		log_event((struct usb_raw_event *)&event);
 
 		if (event.inner.length == 4294967295) {
-			//all usb hotplug remove will cause restart usbbr 
-			//when in this, is big card reader receive eject 
+			//all usb hotplug remove will cause restart usbbr
+			//when in this, is big card reader receive eject
 			//command stop tcpdump process cause, continue
 			continue;
 
 			//printf("End for EP0, thread id(%d)\n", gettid());
 			//return;
 		}
-		
+
 		// Normally, we would only need to check for USB_RAW_EVENT_RESET to handle a reset event.
 		// However, dwc2 is buggy and it reports a disconnect event instead of a reset.
 		if (event.inner.type == USB_RAW_EVENT_RESET || event.inner.type == USB_RAW_EVENT_DISCONNECT) {
@@ -474,10 +511,6 @@ void ep0_loop(int fd) {
 			if (event.ctrl.bRequestType == 0x80 && event.ctrl.bRequest == 0x06
                         	&&event.ctrl.wLength==18) { //two get device need restart
 				if (get_device_done_once) {
-					//stop usb_tcpdump
-					std::string pcap_file_name = pcap_file();
-					std::string pcap_file_save_name = pcap_file_save();
-					stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
 					//must close raw_gadget fd before restart self
 					close(raw_gadget_fd);
 					//restart self becasue device remove
@@ -552,7 +585,7 @@ void ep0_loop(int fd) {
 						}
 
 					}
-					
+
 				}
 
 				if (verbose_level >= 2)
@@ -594,7 +627,7 @@ void ep0_loop(int fd) {
 						release_interface(interface_num);
 					}
 				}
-				
+
 				usb_raw_configure(fd);
 				set_configuration(config->config.bConfigurationValue);
 				host_device_desc.current_config = desired_config;
@@ -688,12 +721,40 @@ void ep0_loop(int fd) {
 							if (pos != std::string::npos) {
 								{
 									std::lock_guard<std::mutex> lock(mtx);
-									eject_command_control.push(1);
+									eject_command_send = true;
 								}
-								
+
 							}
 
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
+							std::vector data_vec(data, length);
+							pcap_usb_data pud = {
+								.event_type = URB_COMPLETE,
+								.transfer_type = URB_INTERRUPT;
+								.endpoint_number = ep.bEndpointAddress;
+								.device_address = device_address;
+								.bus_id = bus_number,
+								.data_len = length,
+								.isNeedResaveFile = false,
+								.data = data_vec;
+							}
+							switch (transfer_type)
+							{
+							case "isoc":
+								pud.transfer_type = URB_ISOCHRONOUS;
+								break;
+							case "bulk":
+								pud.transfer_type = URB_BULK;
+								break;
+							case "int":
+								pud.transfer_type = URB_INTERRUPT;
+								break;
+							default:
+								break;
+							}
+							sendDataToPcapFile(&pud);
+							if (data)
+								delete[] data;
 							if (verbose_level >= 2)
 								print_data_to_endpoint(io, 0x00, ep->endpoint.bEndpointAddress, "control_to_int", "out");
 

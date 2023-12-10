@@ -112,14 +112,14 @@ int connect_device(int vendor_id, int product_id) {
 			if (vendor_id == -1 && product_id == -1) {
 				//orangepc just proxy usb port 3(usb2.0) port 6(usb1.1)
 				//phy port is port 3
-				bus_number = libusb_get_bus_number(dvc);
+				bus_id = libusb_get_bus_number(dvc);
 				device_address = libusb_get_device_address(dvc);
 				found = dvc;
 				break;
 			}
 			else if ((vendor_id == device_device_desc.idVendor || vendor_id == LIBUSB_HOTPLUG_MATCH_ANY) &&
 				(product_id == device_device_desc.idProduct || product_id == LIBUSB_HOTPLUG_MATCH_ANY)) {
-				bus_number = libusb_get_bus_number(dvc);
+				bus_id = libusb_get_bus_number(dvc);
 				device_address = libusb_get_device_address(dvc);
 				found = dvc;
 				break;

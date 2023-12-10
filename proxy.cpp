@@ -176,31 +176,25 @@ void *ep_loop_write(void *arg) {
 					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
 				break;
 			}
-			std::vector data_vec(data, length);
+			std::vector<unsigned char> data_vec(data, data + length);
 			pcap_usb_data pud = {
 				.event_type = URB_COMPLETE,
-				.transfer_type = URB_INTERRUPT;
-				.endpoint_number = ep.bEndpointAddress;
-				.device_address = device_address;
-				.bus_id = bus_number,
-				.data_len = length,
+				.transfer_type = URB_INTERRUPT,
+				.endpoint_number = ep.bEndpointAddress,
+				.device_address = device_address,
+				.bus_id = (uint16_t)bus_id,
+				.data_len = (uint32_t)length,
 				.isNeedResaveFile = false,
-				.data = data_vec;
-			}
-			switch (transfer_type)
-			{
-			case "isoc":
-				pud.transfer_type = URB_ISOCHRONOUS;
-				break;
-			case "bulk":
-				pud.transfer_type = URB_BULK;
-				break;
-			case "int":
-				pud.transfer_type = URB_INTERRUPT;
-				break;
-			default:
-				break;
-			}
+				.data = data_vec
+			};
+                        if (transfer_type == "isoc")
+                        	pud.transfer_type = URB_ISOCHRONOUS;
+                        else if (transfer_type == "bulk")
+                                pud.transfer_type = URB_BULK;
+                        else if (transfer_type == "int")
+                                pud.transfer_type = URB_INTERRUPT;
+
+
 			sendDataToPcapFile(&pud);
 			if (data)
 				delete[] data;
@@ -251,36 +245,30 @@ void *ep_loop_read(void *arg) {
 					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
 				break;
 			}
-			std::vector data_vec(data, nbytes);
+			std::vector<unsigned char> data_vec(data, data + nbytes);
 			pcap_usb_data pud = {
 				.event_type = URB_COMPLETE,
-				.transfer_type = URB_INTERRUPT;
-				.endpoint_number = ep.bEndpointAddress;
-				.device_address = device_address;
-				.bus_id = bus_number,
-				.data_len = nbytes,
+				.transfer_type = URB_INTERRUPT,
+				.endpoint_number = ep.bEndpointAddress,
+				.device_address = device_address,
+				.bus_id = (uint16_t)bus_id,
+				.data_len = (uint32_t)nbytes,
 				.isNeedResaveFile = false,
-				.data = data_vec;
-			}
-			switch (transfer_type)
-			{
-			case "isoc":
-				pud.transfer_type = URB_ISOCHRONOUS;
-				break;
-			case "bulk":
-				pud.transfer_type = URB_BULK;
-				break;
-			case "int":
-				pud.transfer_type = URB_INTERRUPT;
-				break;
-			default:
-				break;
-			}
+				.data = data_vec
+			};
+                        if (transfer_type == "isoc")
+                        	pud.transfer_type = URB_ISOCHRONOUS;
+                        else if (transfer_type == "bulk")
+                        	pud.transfer_type = URB_BULK;
+                        else if (transfer_type == "int")
+                                pud.transfer_type = URB_INTERRUPT;
+
+
 			//stop usb tcpdump when write eject command  response
 			{
 				std::lock_guard<std::mutex> lock(mtx);
 				if (eject_command_send) {
-					pud.isNeedResaveFile = true
+					pud.isNeedResaveFile = true;
 					eject_command_send = false;
 				}
 
@@ -727,32 +715,28 @@ void ep0_loop(int fd) {
 							}
 
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
-							std::vector data_vec(data, length);
+							std::vector<unsigned char> data_vec(data, data + length);
 							pcap_usb_data pud = {
 								.event_type = URB_COMPLETE,
-								.transfer_type = URB_INTERRUPT;
-								.endpoint_number = ep.bEndpointAddress;
-								.device_address = device_address;
-								.bus_id = bus_number,
-								.data_len = length,
+								.transfer_type = URB_INTERRUPT,
+								.endpoint_number = ep->endpoint.bEndpointAddress,
+								.device_address = device_address,
+								.bus_id = (uint16_t)bus_id,
+								.data_len = (uint32_t)length,
 								.isNeedResaveFile = false,
-								.data = data_vec;
-							}
-							switch (transfer_type)
-							{
-							case "isoc":
+								.data = data_vec
+                                                        };
+							switch (ep->endpoint.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+							case USB_ENDPOINT_XFER_ISOC:
 								pud.transfer_type = URB_ISOCHRONOUS;
 								break;
-							case "bulk":
+							case USB_ENDPOINT_XFER_BULK:
 								pud.transfer_type = URB_BULK;
-								break;
-							case "int":
-								pud.transfer_type = URB_INTERRUPT;
 								break;
 							default:
 								break;
 							}
-							sendDataToPcapFile(&pud);
+ 							sendDataToPcapFile(&pud);
 							if (data)
 								delete[] data;
 							if (verbose_level >= 2)

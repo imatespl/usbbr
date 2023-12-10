@@ -31,7 +31,6 @@ int hexToDecimal(int input);
 void findAndReplaceAll(std::string& data, std::string toSearch, std::string replaceStr);
 
 extern char** self_prog;
-extern int bus_number;
 extern int raw_gadget_fd;
 extern pid_t pcap_pid;
 extern int start_tcpdump_usbmon(int bus_num, std::string pcap_file);

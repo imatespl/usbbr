@@ -5,8 +5,9 @@
 #include <vector>
 
 //pcap file name
-inline const std::string  PCAP_FILE "/data/usb_running.pcap"
+extern std::string PCAP_FILE;
 
+#define MAX_PACKET_SIZE 65535
 /*
  * possible transfer mode
  */
@@ -27,23 +28,23 @@ inline const std::string  PCAP_FILE "/data/usb_running.pcap"
    * USB setup header as defined in USB specification.
    * Appears at the front of each Control S-type packet in DLT_USB captures.
    */
-typedef struct _usb_setup {
+struct pcap_usb_setup {
 	uint8_t  bmRequestType;
 	uint8_t  bRequest;
 	uint16_t wValue;
 	uint16_t wIndex;
 	uint16_t wLength;
-} pcap_usb_setup;
+};
 
 /*
  * Information from the URB for Isochronous transfers.
  */
-typedef struct _iso_rec {
+struct iso_rec {
 	uint32_t error_count;
 	uint32_t numdesc;
-} iso_rec;
+};
 
-typedef struct _usb_header_mmapped {
+struct pcap_usb_header_mmapped {
 	uint64_t  id;
 	uint8_t   event_type;
 	uint8_t   transfer_type;
@@ -65,8 +66,9 @@ typedef struct _usb_header_mmapped {
 	int32_t   start_frame;  /* for Isochronous events */
 	uint32_t  xfer_flags;   /* copy of URB's transfer flags */
 	uint32_t  ndesc;        /* number of isochronous descriptors */
-} pcap_usb_header_mmapped;
-typedef struct __pcap_usb_data {
+};
+
+struct pcap_usb_data {
 	uint8_t    event_type;
 	uint8_t    transfer_type;
 	uint8_t    endpoint_number;
@@ -75,14 +77,13 @@ typedef struct __pcap_usb_data {
 	uint32_t   data_len;
 	bool       isNeedResaveFile;
 	std::vector<unsigned char> data;
-} pcap_usb_data;
+};
 
 void usb_linux_64_byte_header(pcap_usb_header_mmapped* pusbhdr, pcap_usb_data* pud);
 
-std::deque<pcap_usb_data> usbDataQueue;
-std::mutex usbDataMutex;
-std::condition_variable usbDataCondition; //pragma once
+extern std::deque<pcap_usb_data> usbDataQueue;
+extern std::mutex usbDataMutex;
+extern std::condition_variable usbDataCondition; //pragma once
 
-bool isDataProcessingDone = false;
 void writeUSBPcapThread();
 void sendDataToPcapFile(pcap_usb_data* pud);

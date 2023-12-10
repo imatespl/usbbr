@@ -3,7 +3,8 @@
 #include "proxy.h"
 #include "misc.h"
 #include <set>
-
+#include <thread>
+#include "usbdata-saveto-file.h"
 int verbose_level = 0;
 bool please_stop_ep0 = false;
 volatile bool please_stop_eps = false; // Use volatile to mark as atomic.

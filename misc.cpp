@@ -2,6 +2,7 @@
 #include <bits/stdc++.h>
 
 #include "misc.h"
+#include "device-libusb.h"
 
 
 
@@ -130,7 +131,7 @@ void *pcap_file_max_and_resave(void *arg __attribute__((unused))) {
 				std::string pcap_file_save_name = pcap_file_save();
 				printf("pcap is large 1M, size is %d resave new file\n", pcap_filesize);
 				stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-				pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
+				pcap_pid = start_tcpdump_usbmon(bus_id, pcap_file_name);
 			}
 		}
 	}

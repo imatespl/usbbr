@@ -1,4 +1,4 @@
-LDFLAG=-lusb-1.0 -pthread -ljsoncpp
+LDFLAG=-lusb-1.0 -pthread -ljsoncpp -lpcap
 
 ifndef CFLAGS
 	ifeq ($(TARGET),Debug)
@@ -10,8 +10,8 @@ endif
 
 .PHONY: all clean
 
-usbbr: usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o
-	g++ usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o $(LDFLAG) -o usbbr
+usbbr: usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o usbdata-saveto-file.o
+	g++ usb-proxy.o host-raw-gadget.o device-libusb.o proxy.o misc.o usbdata-saveto-file.o $(LDFLAG) -o usbbr
 
 %.o: %.cpp %.h
 	g++ $(CFLAGS) -c $<

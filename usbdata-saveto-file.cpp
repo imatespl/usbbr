@@ -50,7 +50,7 @@ void writeUSBPcapThread() {
 	pcap_t* pcap = pcap_open_dead(DLT_USB_LINUX_MMAPPED, MAX_PACKET_SIZE);
 	pcap_dumper_t* pcap_dumper = pcap_dump_open(pcap, PCAP_FILE.c_str());
 	pcap_usb_header_mmapped pusbhdr;
-	unsigned char* dataBytes;
+	unsigned char* dataBytes = NULL;
 
 	while (true) {
 		std::unique_lock<std::mutex> lock(usbDataMutex);
@@ -67,6 +67,7 @@ void writeUSBPcapThread() {
 			if (dataVectorSize < 64) {
 				//need add zero to data end to len 64
 				dataBytes = new unsigned char[64];
+				dataVectorSize = 64;
 				std::memset(dataBytes, 0, 64);
 				for (size_t i = 0; i < dataVectorSize; ++i) {
 					dataBytes[i] = pud.data[i];
@@ -78,17 +79,18 @@ void writeUSBPcapThread() {
 					dataBytes[i] = pud.data[i];
 				}
 			}
-			size_t pcap_total_len = sizeof(pusbhdr) + sizeof(*dataBytes) / sizeof(dataBytes[0]);
+			size_t pcap_total_len = sizeof(pusbhdr) + dataVectorSize;
 			unsigned char* pcapDataBytes = new unsigned char[pcap_total_len];
-			memcpy(pcapDataBytes, &pusbhdr, sizeof(pusbhdr));
-			memcpy(pcapDataBytes + sizeof(pcap_usb_header_mmapped), dataBytes, sizeof(*dataBytes) / sizeof(dataBytes[0]));
+			std::memset(pcapDataBytes, 0, pcap_total_len);
+			memcpy(pcapDataBytes, (char*)&pusbhdr, sizeof(pusbhdr));
+			memcpy(pcapDataBytes + sizeof(pusbhdr), dataBytes, dataVectorSize);
 			// Write the received data to PCAP file
 			struct pcap_pkthdr pkthdr;
 			gettimeofday(&pkthdr.ts, NULL);
 			pkthdr.caplen = pcap_total_len;
 			pkthdr.len = pcap_total_len;
-			pcap_dump((u_char*)pcap_dumper, &pkthdr, dataBytes);
-
+			pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
+			
 			//if file > 1M need save new file;
 			file_size += pcap_total_len;
 			if (file_size >= max_file_size || pud.isNeedResaveFile) {

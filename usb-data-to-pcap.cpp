@@ -14,6 +14,7 @@ std::deque<pcap_usb_data> usbDataQueue;
 std::mutex usbDataMutex;
 std::condition_variable usbDataCondition; //pragma once
 
+bool isPcapDumpDone = false;
 size_t file_size = 0;
 size_t max_file_size = 1024 * 1024; //max size is 1M;
 
@@ -116,6 +117,7 @@ void writeUSBPcapThread() {
 				std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save()+"&";
 				system(save_command.c_str());
 			}
+			isPcapDumpDone = true;
 			deviceRemoveCondition.notify_one();
 				
 		}

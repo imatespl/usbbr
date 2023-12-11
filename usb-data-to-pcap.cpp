@@ -13,8 +13,9 @@ std::string PCAP_FILE = "/data/usb_running.pcap";
 std::deque<pcap_usb_data> usbDataQueue;
 std::mutex usbDataMutex;
 std::condition_variable usbDataCondition; //pragma once
-
+bool pcapDumpNeedDone = false;
 bool isPcapDumpDone = false;
+
 size_t file_size = 0;
 size_t max_file_size = 1024 * 1024; //max size is 1M;
 
@@ -57,7 +58,7 @@ void writeUSBPcapThread() {
 		std::unique_lock<std::mutex> lock(usbDataMutex);
 
 		// Wait for data to be available or processing to be done
-		usbDataCondition.wait(lock, [&] { return !usbDataQueue.empty(); });
+		usbDataCondition.wait(lock, [&] { return !usbDataQueue.empty() || pcapDumpNeedDone; });
 
 		// Process data and write to file
 		while (!usbDataQueue.empty()) {
@@ -108,20 +109,17 @@ void writeUSBPcapThread() {
 
 		}
 
-		// usb device hotplug remove event, need close pcap writer
-		{
-			std::unique_lock<std::mutex> lock(deviceRemoveMutex);
-			if (isDeviceRemoved) {
-				pcap_dump_close(pcap_dumper);
-				pcap_close(pcap);
-				std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save()+"&";
-				system(save_command.c_str());
+		if (pcapDumpNeedDone) {
+			pcap_dump_close(pcap_dumper);
+			pcap_close(pcap);
+			std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save()+"&";
+			system(save_command.c_str());
+			{
+				std::unique_lock<std::mutex> lock(deviceRemoveMutex);
+				isPcapDumpDone = true;
+				deviceRemoveCondition.notify_one();
 			}
-			isPcapDumpDone = true;
-			deviceRemoveCondition.notify_one();
-				
 		}
-
 	}
 
 }

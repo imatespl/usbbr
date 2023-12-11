@@ -6,9 +6,7 @@ libusb_context 			*context = NULL;
 libusb_hotplug_callback_handle	callback_handle = -1;
 uint8_t    bus_id;
 uint8_t    device_address;
-std::mutex deviceRemoveMutex;
-bool isDeviceRemoved = false;
-std::condition_variable deviceRemoveCondition;
+
 
 struct libusb_device_descriptor		device_device_desc;
 struct libusb_config_descriptor		**device_config_desc;
@@ -22,12 +20,12 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 	printf("Hotplug event\n");
 
 	{
-		std::unique_lock<std::mutex> lock(deviceRemoveMutex);
-		isDeviceRemoved = true;
+		std::unique_lock<std::mutex> lock(usbDataMutex);
+		pcapDumpNeedDone = true;
 	}
 	while (true) {
-		std::unique_lock<std::mutex> lock(deviceRemoveMutex);
-		deviceRemoveCondition.wait(lock, [&] { return isPcapDumpDone; });
+		std::unique_lock<std::mutex> lock(pcapDumpMutex);
+		pcapDumpCondition.wait(lock, [&] { return isPcapDumpDone; });
 		if (isPcapDumpDone) {
 			close(raw_gadget_fd);
 			//restart self becasue device remove

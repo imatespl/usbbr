@@ -107,6 +107,19 @@ void writeUSBPcapThread() {
 
 		}
 
+		// usb device hotplug remove event, need close pcap writer
+		{
+			std::unique_lock<std::mutex> lock(deviceRemoveMutex);
+			if (isDeviceRemoved) {
+				pcap_dump_close(pcap_dumper);
+				pcap_close(pcap);
+				std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save()+"&";
+				system(save_command.c_str());
+			}
+			deviceRemoveCondition.notify_one();
+				
+		}
+
 	}
 
 }

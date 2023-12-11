@@ -1,4 +1,5 @@
 #include "device-libusb.h"
+#include "usb-data-to-pcap.h"
 
 libusb_device 			**devs;
 libusb_device_handle 		*dev_handle;

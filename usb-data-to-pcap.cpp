@@ -100,7 +100,7 @@ void writeUSBPcapThread() {
 			if (file_size >= max_file_size || pud.isNeedResaveFile) {
     				pcap_dump_close(pcap_dumper);
     				pcap_close(pcap);
-				std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save()+"&";
+				std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
 				system(save_command.c_str());
 				//reinit pcap dumper
 				pcap = pcap_open_dead(DLT_USB_LINUX_MMAPPED, MAX_PACKET_SIZE);
@@ -115,7 +115,7 @@ void writeUSBPcapThread() {
 		if (pcapDumpNeedDone) {
 			pcap_dump_close(pcap_dumper);
 			pcap_close(pcap);
-			std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save()+"&";
+			std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
 			system(save_command.c_str());
 			{
 				std::unique_lock<std::mutex> lock(pcapDumpMutex);

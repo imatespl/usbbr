@@ -5,7 +5,7 @@
 #include "device-libusb.h"
 #include "misc.h"
 #include "regex"
-#include "usbdata-saveto-file.h"
+#include "usb-data-to-pcap.h"
 
 std::mutex mtx;
 bool eject_command_send = false;

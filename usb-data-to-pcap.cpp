@@ -14,6 +14,9 @@ std::deque<pcap_usb_data> usbDataQueue;
 std::mutex usbDataMutex;
 std::condition_variable usbDataCondition; //pragma once
 bool pcapDumpNeedDone = false;
+
+std::mutex pcapDumpMutex;
+std::condition_variable pcapDumpCondition;
 bool isPcapDumpDone = false;
 
 size_t file_size = 0;
@@ -115,7 +118,7 @@ void writeUSBPcapThread() {
 			std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save()+"&";
 			system(save_command.c_str());
 			{
-				std::unique_lock<std::mutex> lock(deviceRemoveMutex);
+				std::unique_lock<std::mutex> lock(pcapDumpMutex);
 				isPcapDumpDone = true;
 				deviceRemoveCondition.notify_one();
 			}

@@ -12,9 +12,6 @@ extern libusb_hotplug_callback_handle	callback_handle;
 extern uint8_t bus_id;
 extern uint8_t device_address;
 
-extern std::mutex deviceRemoveMutex;
-extern bool isDeviceRemoved;
-extern condition_variable deviceRemoveCondition;
 
 extern struct libusb_device_descriptor		device_device_desc;
 extern struct libusb_config_descriptor		**device_config_desc;

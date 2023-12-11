@@ -178,7 +178,7 @@ void *ep_loop_write(void *arg) {
 			}
 			std::vector<unsigned char> data_vec(data, data + length);
 			pcap_usb_data pud = {
-				.event_type = URB_COMPLETE,
+				.event_type = URB_SUBMIT,
 				.transfer_type = URB_INTERRUPT,
 				.endpoint_number = ep.bEndpointAddress,
 				.device_address = device_address,
@@ -717,7 +717,7 @@ void ep0_loop(int fd) {
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
 							std::vector<unsigned char> data_vec(data, data + length);
 							pcap_usb_data pud = {
-								.event_type = URB_COMPLETE,
+								.event_type = URB_SUBMIT,
 								.transfer_type = URB_INTERRUPT,
 								.endpoint_number = ep->endpoint.bEndpointAddress,
 								.device_address = device_address,

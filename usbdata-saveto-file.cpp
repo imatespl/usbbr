@@ -34,7 +34,7 @@ void usb_linux_64_byte_header(pcap_usb_header_mmapped* pusbhdr, pcap_usb_data* p
 		(int32_t)now.tv_usec,
 		0,
 		64,
-		pud->data_len,
+		pud->data_len < 64 ? 64 : pud->data_len,
 		{0, 0, 0, 0, 0},
 		0,
 		0,
@@ -67,7 +67,6 @@ void writeUSBPcapThread() {
 			if (dataVectorSize < 64) {
 				//need add zero to data end to len 64
 				dataBytes = new unsigned char[64];
-				dataVectorSize = 64;
 				std::memset(dataBytes, 0, 64);
 				for (size_t i = 0; i < dataVectorSize; ++i) {
 					dataBytes[i] = pud.data[i];
@@ -79,7 +78,7 @@ void writeUSBPcapThread() {
 					dataBytes[i] = pud.data[i];
 				}
 			}
-			size_t pcap_total_len = sizeof(pusbhdr) + dataVectorSize;
+			size_t pcap_total_len = sizeof(pusbhdr) + (dataVectorSize < 64 ? 64 : dataVectorSize);
 			unsigned char* pcapDataBytes = new unsigned char[pcap_total_len];
 			std::memset(pcapDataBytes, 0, pcap_total_len);
 			memcpy(pcapDataBytes, (char*)&pusbhdr, sizeof(pusbhdr));

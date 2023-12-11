@@ -6,7 +6,7 @@
 #include <sys/time.h>
 #include <stdint.h>
 #include <cstdlib>
-#include "usbdata-saveto-file.h"
+#include "usb-data-to-pcap.h"
 #include "misc.h"
 
 std::string PCAP_FILE = "/data/usb_running.pcap";

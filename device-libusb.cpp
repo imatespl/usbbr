@@ -6,6 +6,9 @@ libusb_context 			*context = NULL;
 libusb_hotplug_callback_handle	callback_handle = -1;
 uint8_t    bus_id;
 uint8_t    device_address;
+std::mutex deviceRemoveMutex;
+bool isDeviceRemoved = false;
+std::condition_variable deviceRemoveCondition;
 
 struct libusb_device_descriptor		device_device_desc;
 struct libusb_config_descriptor		**device_config_desc;
@@ -18,19 +21,23 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 			void *user_data __attribute__((unused))) {
 	printf("Hotplug event\n");
 
-	//stop usb_tcpdump
-
-	std::string pcap_file_name = pcap_file();
 	{
-		std::lock_guard<std::mutex> lock(pcap_mtx);
-		std::string pcap_file_save_name = pcap_file_save();
-		stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-		//must close raw_gadget fd before restart self
-		close(raw_gadget_fd);
-		//restart self becasue device remove
-		if (execv(self_prog[0], self_prog) == -1) {
-			printf("restart self process failed\n");
+		std::unique_lock<std::mutex> lock(deviceRemoveMutex);
+		isDeviceRemoved = true;
+	}
+	while (true) {
+		std::unique_lock<std::mutex> lock(deviceRemoveMutex);
+		deviceRemoveCondition.wait(lock, [&] { return isPcapDumpDone; });
+		if (isPcapDumpDone) {
+			close(raw_gadget_fd);
+			//restart self becasue device remove
+			if (execv(self_prog[0], self_prog) == -1) {
+				printf("restart self process failed\n");
+				
+			}
+		
 		}
+		break;
 	}
 	return 0;
 }

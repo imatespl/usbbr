@@ -84,7 +84,10 @@ void usb_linux_64_byte_header(pcap_usb_header_mmapped* pusbhdr, pcap_usb_data* p
 extern std::deque<pcap_usb_data> usbDataQueue;
 extern std::mutex usbDataMutex;
 extern std::condition_variable usbDataCondition; //pragma once
+extern bool pcapDumpNeedDone;
 
+extern std::mutex pcapDumpMutex;
+extern std::condition_variable pcapDumpCondition;
 extern bool isPcapDumpDone;
 
 void writeUSBPcapThread();

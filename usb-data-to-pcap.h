@@ -85,5 +85,7 @@ extern std::deque<pcap_usb_data> usbDataQueue;
 extern std::mutex usbDataMutex;
 extern std::condition_variable usbDataCondition; //pragma once
 
+extern bool isPcapDumpDone;
+
 void writeUSBPcapThread();
 void sendDataToPcapFile(pcap_usb_data* pud);

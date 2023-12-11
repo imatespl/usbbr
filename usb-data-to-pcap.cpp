@@ -120,7 +120,7 @@ void writeUSBPcapThread() {
 			{
 				std::unique_lock<std::mutex> lock(pcapDumpMutex);
 				isPcapDumpDone = true;
-				deviceRemoveCondition.notify_one();
+				pcapDumpCondition.notify_one();
 			}
 		}
 	}

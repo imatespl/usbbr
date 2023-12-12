@@ -176,26 +176,31 @@ void *ep_loop_write(void *arg) {
 					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
 				break;
 			}
-			std::vector<unsigned char> data_vec(data, data + length);
-			pcap_usb_data pud = {
-				.event_type = URB_SUBMIT,
-				.transfer_type = URB_INTERRUPT,
-				.endpoint_number = ep.bEndpointAddress,
-				.device_address = device_address,
-				.bus_id = (uint16_t)bus_id,
-				.data_len = (uint32_t)length,
-				.isNeedResaveFile = false,
-				.data = data_vec
-			};
-                        if (transfer_type == "isoc")
-                        	pud.transfer_type = URB_ISOCHRONOUS;
-                        else if (transfer_type == "bulk")
-                                pud.transfer_type = URB_BULK;
-                        else if (transfer_type == "int")
-                                pud.transfer_type = URB_INTERRUPT;
-
-
-			sendDataToPcapFile(&pud);
+			// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
+			// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
+			if (data[1] == 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
+				|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56)) {
+				std::vector<unsigned char> data_vec(data, data + length);
+				pcap_usb_data pud = {
+					.event_type = URB_SUBMIT,
+					.transfer_type = URB_INTERRUPT,
+					.endpoint_number = ep.bEndpointAddress,
+					.device_address = device_address,
+					.bus_id = (uint16_t)bus_id,
+					.data_len = (uint32_t)length,
+					.isNeedResaveFile = false,
+					.data = data_vec
+				};
+	                        if (transfer_type == "isoc")
+	                        	pud.transfer_type = URB_ISOCHRONOUS;
+	                        else if (transfer_type == "bulk")
+	                                pud.transfer_type = URB_BULK;
+	                        else if (transfer_type == "int")
+	                                pud.transfer_type = URB_INTERRUPT;
+	
+	
+				sendDataToPcapFile(&pud);
+			}
 			if (data)
 				delete[] data;
 		}
@@ -245,35 +250,40 @@ void *ep_loop_read(void *arg) {
 					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
 				break;
 			}
+			// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
+			// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
+			if (data[1] == 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
+				|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56)) {
 			std::vector<unsigned char> data_vec(data, data + nbytes);
-			pcap_usb_data pud = {
-				.event_type = URB_COMPLETE,
-				.transfer_type = URB_INTERRUPT,
-				.endpoint_number = ep.bEndpointAddress,
-				.device_address = device_address,
-				.bus_id = (uint16_t)bus_id,
-				.data_len = (uint32_t)nbytes,
-				.isNeedResaveFile = false,
-				.data = data_vec
-			};
-                        if (transfer_type == "isoc")
-                        	pud.transfer_type = URB_ISOCHRONOUS;
-                        else if (transfer_type == "bulk")
-                        	pud.transfer_type = URB_BULK;
-                        else if (transfer_type == "int")
-                                pud.transfer_type = URB_INTERRUPT;
-
-
-			//stop usb tcpdump when write eject command  response
-			{
-				std::lock_guard<std::mutex> lock(mtx);
-				if (eject_command_send) {
-					pud.isNeedResaveFile = true;
-					eject_command_send = false;
+				pcap_usb_data pud = {
+					.event_type = URB_COMPLETE,
+					.transfer_type = URB_INTERRUPT,
+					.endpoint_number = ep.bEndpointAddress,
+					.device_address = device_address,
+					.bus_id = (uint16_t)bus_id,
+					.data_len = (uint32_t)nbytes,
+					.isNeedResaveFile = false,
+					.data = data_vec
+				};
+	                        if (transfer_type == "isoc")
+	                        	pud.transfer_type = URB_ISOCHRONOUS;
+	                        else if (transfer_type == "bulk")
+	                        	pud.transfer_type = URB_BULK;
+	                        else if (transfer_type == "int")
+	                                pud.transfer_type = URB_INTERRUPT;
+	
+	
+				//stop usb tcpdump when write eject command  response
+				{
+					std::lock_guard<std::mutex> lock(mtx);
+					if (eject_command_send) {
+						pud.isNeedResaveFile = true;
+						eject_command_send = false;
+					}
+	
 				}
-
+				sendDataToPcapFile(&pud);
 			}
-			sendDataToPcapFile(&pud);
 			if (nbytes >= 0) {
 				memcpy(io.data, data, nbytes);
 				io.inner.ep = ep_num;
@@ -715,28 +725,33 @@ void ep0_loop(int fd) {
 							}
 
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
-							std::vector<unsigned char> data_vec(data, data + length);
-							pcap_usb_data pud = {
-								.event_type = URB_SUBMIT,
-								.transfer_type = URB_INTERRUPT,
-								.endpoint_number = ep->endpoint.bEndpointAddress,
-								.device_address = device_address,
-								.bus_id = (uint16_t)bus_id,
-								.data_len = (uint32_t)length,
-								.isNeedResaveFile = false,
-								.data = data_vec
-                                                        };
-							switch (ep->endpoint.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
-							case USB_ENDPOINT_XFER_ISOC:
-								pud.transfer_type = URB_ISOCHRONOUS;
-								break;
-							case USB_ENDPOINT_XFER_BULK:
-								pud.transfer_type = URB_BULK;
-								break;
-							default:
-								break;
+							// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
+							// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
+							if (data[1] == 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
+								|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56)) {
+								std::vector<unsigned char> data_vec(data, data + length);
+								pcap_usb_data pud = {
+									.event_type = URB_SUBMIT,
+									.transfer_type = URB_INTERRUPT,
+									.endpoint_number = ep->endpoint.bEndpointAddress,
+									.device_address = device_address,
+									.bus_id = (uint16_t)bus_id,
+									.data_len = (uint32_t)length,
+									.isNeedResaveFile = false,
+									.data = data_vec
+	                                                        };
+								switch (ep->endpoint.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+								case USB_ENDPOINT_XFER_ISOC:
+									pud.transfer_type = URB_ISOCHRONOUS;
+									break;
+								case USB_ENDPOINT_XFER_BULK:
+									pud.transfer_type = URB_BULK;
+									break;
+								default:
+									break;
+								}
+	 							sendDataToPcapFile(&pud);
 							}
- 							sendDataToPcapFile(&pud);
 							if (data)
 								delete[] data;
 							if (verbose_level >= 2)

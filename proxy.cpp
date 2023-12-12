@@ -191,14 +191,16 @@ void *ep_loop_write(void *arg) {
 					.isNeedResaveFile = false,
 					.data = data_vec
 				};
-	                        if (transfer_type == "isoc")
-	                        	pud.transfer_type = URB_ISOCHRONOUS;
-	                        else if (transfer_type == "bulk")
-	                                pud.transfer_type = URB_BULK;
-	                        else if (transfer_type == "int")
-	                                pud.transfer_type = URB_INTERRUPT;
-	
-	
+				switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+				case USB_ENDPOINT_XFER_ISOC:
+					pud.transfer_type = URB_ISOCHRONOUS;
+					break;
+				case USB_ENDPOINT_XFER_BULK:
+					pud.transfer_type = URB_BULK;
+					break;
+				default:
+					break;
+				}
 				sendDataToPcapFile(&pud);
 			}
 			if (data)
@@ -265,13 +267,16 @@ void *ep_loop_read(void *arg) {
 					.isNeedResaveFile = false,
 					.data = data_vec
 				};
-	                        if (transfer_type == "isoc")
-	                        	pud.transfer_type = URB_ISOCHRONOUS;
-	                        else if (transfer_type == "bulk")
-	                        	pud.transfer_type = URB_BULK;
-	                        else if (transfer_type == "int")
-	                                pud.transfer_type = URB_INTERRUPT;
-	
+				switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+				case USB_ENDPOINT_XFER_ISOC:
+					pud.transfer_type = URB_ISOCHRONOUS;
+					break;
+				case USB_ENDPOINT_XFER_BULK:
+					pud.transfer_type = URB_BULK;
+					break;
+				default:
+					break;
+				}
 	
 				//stop usb tcpdump when write eject command  response
 				{

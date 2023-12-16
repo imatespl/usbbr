@@ -178,7 +178,7 @@ void *ep_loop_write(void *arg) {
 			}
 			// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
 			// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-			if (data[1] == 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
+			if (data[1] != 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
 				|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56)) {
 				std::vector<unsigned char> data_vec(data, data + length);
 				pcap_usb_data pud = {
@@ -252,11 +252,21 @@ void *ep_loop_read(void *arg) {
 					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
 				break;
 			}
+
+			bool needResaveFile = false;
+			{
+				std::lock_guard<std::mutex> lock(mtx);
+				if (eject_command_send) {
+					needResaveFile = true;
+					eject_command_send = false;
+				}
+
+			}
 			// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
 			// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-			if (data[1] == 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
-				|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56)) {
-			std::vector<unsigned char> data_vec(data, data + nbytes);
+			if (data[1] != 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
+				|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56) || needResaveFile) {
+				std::vector<unsigned char> data_vec(data, data + nbytes);
 				pcap_usb_data pud = {
 					.event_type = URB_COMPLETE,
 					.transfer_type = URB_INTERRUPT,
@@ -277,16 +287,10 @@ void *ep_loop_read(void *arg) {
 				default:
 					break;
 				}
-	
-				//stop usb tcpdump when write eject command  response
-				{
-					std::lock_guard<std::mutex> lock(mtx);
-					if (eject_command_send) {
-						pud.isNeedResaveFile = true;
-						eject_command_send = false;
-					}
-	
-				}
+				
+				if (needResaveFile)
+					pud.isNeedResaveFile = true;
+				
 				sendDataToPcapFile(&pud);
 			}
 			if (nbytes >= 0) {
@@ -732,7 +736,7 @@ void ep0_loop(int fd) {
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
 							// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
 							// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-							if (data[1] == 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
+							if (data[1] != 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
 								|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56)) {
 								std::vector<unsigned char> data_vec(data, data + length);
 								pcap_usb_data pud = {

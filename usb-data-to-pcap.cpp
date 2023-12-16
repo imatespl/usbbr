@@ -93,7 +93,8 @@ void writeUSBPcapThread() {
 			gettimeofday(&pkthdr.ts, NULL);
 			pkthdr.caplen = pcap_total_len;
 			pkthdr.len = pcap_total_len;
-			pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
+			if (!pud.isNeedResaveFile)
+				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
 			
 			//if file > 1M need save new file;
 			file_size += pcap_total_len;

@@ -21,6 +21,10 @@ bool injection_enabled = false;
 std::string injection_file = "injection.json";
 Json::Value injection_config;
 
+std::string conf_file = "/etc/usbbr.json";
+Json::Value usbbr_config;
+
+
 void usage() {
 	printf("Usage:\n");
 	printf("\t-h/--help: print this help message\n");
@@ -283,6 +287,16 @@ int main(int argc, char **argv)
 	printf("Driver is: %s\n", driver);
 	printf("vendor_id is: %d\n", vendor_id);
 	printf("product_id is: %d\n", product_id);
+	// Load conf file
+	Json::Reader confReader;
+	std::ifstream conf(conf_file.c_str());
+	if (confReader.parse(conf, usbbr_config))
+		printf("Load conf file: %s\n", conf_file.c_str());
+	else {
+		printf("Error Load conf file: %s\n", conf_file.c_str());
+		return 1;
+	}
+	conf.close();
 
 	if (injection_enabled) {
 		printf("Injection enabled\n");

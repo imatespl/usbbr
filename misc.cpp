@@ -136,3 +136,29 @@ void *pcap_file_max_and_resave(void *arg __attribute__((unused))) {
 		}
 	}
 }
+
+bool needSaveddata(unsigned char* data) {
+	std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+	if (filterSaveEnable == "yes") {
+		const Json::Value& filterSaveRules = usbbr_config["filter_save_rules"];
+		for (const auto& rule : filterSaveRules) {
+			int dataOffset = rule["data_offset"].asInt() - 1;
+			std::string filterValue = hexToAscii(rule["value"].asString());
+			std::string isEqual = rule["is_equal"].asString();
+			if (isEqual == "yes") {
+				if (std::equal(data+dataOffset, data+dataOffset+std::strlen(filterValue.c_str()), filterValue.c_str()))
+					return true;
+			}
+			else (isEqual == "no") {
+				if (!std::equal(data+dataOffset, data+dataOffset+std::strlen(filterValue.c_str()), filterValue.c_str()))
+					return true
+			}
+
+		}
+
+	} 
+	else if (filterSaveEnable == "no")
+		return true;
+	
+	return false;
+}

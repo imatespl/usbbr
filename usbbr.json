@@ -1,0 +1,38 @@
+{
+    "_comments": [
+        "`filter_save_enable` is the key of enable or disable filter usb data save to pcap, ",
+        "`yes` is enable, `no` disable will save all data",
+        "`filter_save_rules` is active when `filter_save_enable` set to `yes`," ,
+        "`data_offset` is first filter value position of the usb data",
+        "`value` is the data hex value, need add `\\x` before hex value",
+        "`is_equal` is set filter value equal or not equal usb data in `data_offset` position"
+    ],
+	"filter_save_enable": "yes",
+	"filter_save_rules": [
+		{
+			"data_offset": 2,
+			"value": "\\x00",
+			"is_equal": "no"
+		},
+		{
+			"data_offset": 4,
+			"value": "\\x43\\x49",
+			"is_equal": "yes"
+		},
+		{
+			"data_offset": 4,
+			"value": "\\x50\\x49",
+			"is_equal": "yes"
+		},
+		{
+			"data_offset": 4,
+			"value": "\\x43\\x56",
+			"is_equal": "yes"
+		},
+		{
+			"data_offset": 4,
+			"value": "\\x50\\x56",
+			"is_equal": "yes"
+		}		
+	]
+}

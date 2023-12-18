@@ -25,6 +25,9 @@ extern bool injection_enabled;
 extern std::string injection_file;
 extern Json::Value injection_config;
 
+extern std::string conf_file;
+extern Json::Value usbbr_config;
+
 std::string hexToAscii(std::string input);
 int hexToDecimal(int input);
 

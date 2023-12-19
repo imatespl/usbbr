@@ -829,7 +829,7 @@ void ep0_loop(int fd) {
 
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
 
-							// Just 
+							// Just save data match filter rules
 							std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 							if (filterSaveEnable == "yes") {
 								if (needSaveData(data)) {

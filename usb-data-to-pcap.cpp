@@ -94,7 +94,7 @@ void writeUSBPcapThread() {
 			gettimeofday(&pkthdr.ts, NULL);
 			pkthdr.caplen = pcap_total_len;
 			pkthdr.len = pcap_total_len;
-			if (!pud.isNeedResaveFile && filterSaveEnable == "yes")
+			if (filterSaveEnable == "yes" && pud.isFilterData)
 				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
 			else
 				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);

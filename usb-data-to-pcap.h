@@ -91,4 +91,4 @@ extern std::condition_variable pcapDumpCondition;
 extern bool isPcapDumpDone;
 
 void writeUSBPcapThread();
-void sendDataToPcapFile(pcap_usb_data* pud, std::string filter_save_enable);
+void sendDataToPcapFile(pcap_usb_data* pud);

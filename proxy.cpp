@@ -180,7 +180,7 @@ void *ep_loop_write(void *arg) {
 			// Just save data match filter rules
 			std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 			if (filterSaveEnable == "yes") {
-				if (needSaveddata(data)) {
+				if (needSaveData(data)) {
 					std::vector<unsigned char> data_vec(data, data + length);
 					pcap_usb_data pud = {
 						.event_type = URB_SUBMIT,
@@ -296,7 +296,7 @@ void *ep_loop_read(void *arg) {
 			std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 			if (filterSaveEnable == "yes") {
 				// filter match data or need resave file and also match the filter rule
-				if (needSaveddata(data) || needResaveFile) {
+				if (needSaveData(data)) {
 					std::vector<unsigned char> data_vec(data, data + nbytes);
 					pcap_usb_data pud = {
 						.event_type = URB_COMPLETE,

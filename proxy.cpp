@@ -176,10 +176,38 @@ void *ep_loop_write(void *arg) {
 					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
 				break;
 			}
-			// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
-			// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-			if (needSaveddata(data)) {
-				std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+			
+			// Just save data match filter rules
+			std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+			if (filterSaveEnable == "yes") {
+				if (needSaveddata(data)) {
+					std::vector<unsigned char> data_vec(data, data + length);
+					pcap_usb_data pud = {
+						.event_type = URB_SUBMIT,
+						.transfer_type = URB_INTERRUPT,
+						.endpoint_number = ep.bEndpointAddress,
+						.device_address = device_address,
+						.bus_id = (uint16_t)bus_id,
+						.data_len = (uint32_t)length,
+						.isNeedResaveFile = false,
+						.isFilterData = true,
+						.data = data_vec
+					};
+					switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+					case USB_ENDPOINT_XFER_ISOC:
+						pud.transfer_type = URB_ISOCHRONOUS;
+						break;
+					case USB_ENDPOINT_XFER_BULK:
+						pud.transfer_type = URB_BULK;
+						break;
+					default:
+						break;
+					}
+					sendDataToPcapFile(&pud);
+				}
+			}
+			// Default save all data
+			else {
 				std::vector<unsigned char> data_vec(data, data + length);
 				pcap_usb_data pud = {
 					.event_type = URB_SUBMIT,
@@ -189,6 +217,7 @@ void *ep_loop_write(void *arg) {
 					.bus_id = (uint16_t)bus_id,
 					.data_len = (uint32_t)length,
 					.isNeedResaveFile = false,
+					.isFilterData = false,
 					.data = data_vec
 				};
 				switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
@@ -201,7 +230,7 @@ void *ep_loop_write(void *arg) {
 				default:
 					break;
 				}
-				sendDataToPcapFile(&pud, filterSaveEnable);
+				sendDataToPcapFile(&pud);				
 			}
 			if (data)
 				delete[] data;
@@ -262,10 +291,73 @@ void *ep_loop_read(void *arg) {
 				}
 
 			}
-			// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
-			// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-			if (needSaveddata(data)|| needResaveFile) {
-				std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+
+			// Just save data match filter rules
+			std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+			if (filterSaveEnable == "yes") {
+				// filter match data or need resave file and also match the filter rule
+				if (needSaveddata(data) || needResaveFile) {
+					std::vector<unsigned char> data_vec(data, data + nbytes);
+					pcap_usb_data pud = {
+						.event_type = URB_COMPLETE,
+						.transfer_type = URB_INTERRUPT,
+						.endpoint_number = ep.bEndpointAddress,
+						.device_address = device_address,
+						.bus_id = (uint16_t)bus_id,
+						.data_len = (uint32_t)nbytes,
+						.isNeedResaveFile = false,
+						.isFilterData = true,
+						.data = data_vec
+					};
+					switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+					case USB_ENDPOINT_XFER_ISOC:
+						pud.transfer_type = URB_ISOCHRONOUS;
+						break;
+					case USB_ENDPOINT_XFER_BULK:
+						pud.transfer_type = URB_BULK;
+						break;
+					default:
+						break;
+					}
+					// when need resave file push data to queue, to notifly write pcap thread 
+					if (needResaveFile)
+						pud.isNeedResaveFile = true;
+					
+					sendDataToPcapFile(&pud);
+				}
+				
+				else if(needResaveFile) {
+					std::vector<unsigned char> data_vec(data, data + nbytes);
+					pcap_usb_data pud = {
+						.event_type = URB_COMPLETE,
+						.transfer_type = URB_INTERRUPT,
+						.endpoint_number = ep.bEndpointAddress,
+						.device_address = device_address,
+						.bus_id = (uint16_t)bus_id,
+						.data_len = (uint32_t)nbytes,
+						.isNeedResaveFile = false,
+						.isFilterData = false
+						.data = data_vec
+					};
+					switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+					case USB_ENDPOINT_XFER_ISOC:
+						pud.transfer_type = URB_ISOCHRONOUS;
+						break;
+					case USB_ENDPOINT_XFER_BULK:
+						pud.transfer_type = URB_BULK;
+						break;
+					default:
+						break;
+					}
+					
+					if (needResaveFile)
+						pud.isNeedResaveFile = true;
+					
+					sendDataToPcapFile(&pud);
+				}
+			}
+			// Default save all data
+			else {
 				std::vector<unsigned char> data_vec(data, data + nbytes);
 				pcap_usb_data pud = {
 					.event_type = URB_COMPLETE,
@@ -275,6 +367,7 @@ void *ep_loop_read(void *arg) {
 					.bus_id = (uint16_t)bus_id,
 					.data_len = (uint32_t)nbytes,
 					.isNeedResaveFile = false,
+					.isFilterData = false,
 					.data = data_vec
 				};
 				switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
@@ -291,7 +384,8 @@ void *ep_loop_read(void *arg) {
 				if (needResaveFile)
 					pud.isNeedResaveFile = true;
 				
-				sendDataToPcapFile(&pud, filterSaveEnable);
+				sendDataToPcapFile(&pud);
+			
 			}
 			if (nbytes >= 0) {
 				memcpy(io.data, data, nbytes);
@@ -734,10 +828,37 @@ void ep0_loop(int fd) {
 							}
 
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
-							// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
-							// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-							if (needSaveddata(data)) {
-								std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+
+							// Just 
+							std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+							if (filterSaveEnable == "yes") {
+								if (needSaveData(data)) {
+									std::vector<unsigned char> data_vec(data, data + length);
+									pcap_usb_data pud = {
+										.event_type = URB_SUBMIT,
+										.transfer_type = URB_INTERRUPT,
+										.endpoint_number = ep->endpoint.bEndpointAddress,
+										.device_address = device_address,
+										.bus_id = (uint16_t)bus_id,
+										.data_len = (uint32_t)length,
+										.isNeedResaveFile = false,
+										.isFilterData = false,
+										.data = data_vec
+		                                                        };
+									switch (ep->endpoint.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+									case USB_ENDPOINT_XFER_ISOC:
+										pud.transfer_type = URB_ISOCHRONOUS;
+										break;
+									case USB_ENDPOINT_XFER_BULK:
+										pud.transfer_type = URB_BULK;
+										break;
+									default:
+										break;
+									}
+		 							sendDataToPcapFile(&pud);
+								}
+							}
+							else {
 								std::vector<unsigned char> data_vec(data, data + length);
 								pcap_usb_data pud = {
 									.event_type = URB_SUBMIT,
@@ -747,8 +868,9 @@ void ep0_loop(int fd) {
 									.bus_id = (uint16_t)bus_id,
 									.data_len = (uint32_t)length,
 									.isNeedResaveFile = false,
+									.isFilterData = false,
 									.data = data_vec
-	                                                        };
+								};
 								switch (ep->endpoint.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
 								case USB_ENDPOINT_XFER_ISOC:
 									pud.transfer_type = URB_ISOCHRONOUS;
@@ -759,7 +881,7 @@ void ep0_loop(int fd) {
 								default:
 									break;
 								}
-	 							sendDataToPcapFile(&pud, filterSaveEnable);
+								sendDataToPcapFile(&pud);								
 							}
 							if (data)
 								delete[] data;

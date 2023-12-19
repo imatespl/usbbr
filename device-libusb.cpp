@@ -24,6 +24,7 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 		std::unique_lock<std::mutex> lock(usbDataMutex);
 		pcapDumpNeedDone = true;
 	}
+	usbDataCondition.notify_one();
 	while (true) {
 		std::unique_lock<std::mutex> lock(pcapDumpMutex);
 		pcapDumpCondition.wait(lock, [&] { return isPcapDumpDone; });

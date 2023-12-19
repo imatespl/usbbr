@@ -336,7 +336,7 @@ void *ep_loop_read(void *arg) {
 						.bus_id = (uint16_t)bus_id,
 						.data_len = (uint32_t)nbytes,
 						.isNeedResaveFile = false,
-						.isFilterData = false
+						.isFilterData = false,
 						.data = data_vec
 					};
 					switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {

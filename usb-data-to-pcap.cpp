@@ -96,7 +96,7 @@ void writeUSBPcapThread() {
 			pkthdr.len = pcap_total_len;
 			if (filterSaveEnable == "yes" && pud.isFilterData)
 				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
-			else
+			else if (filterSaveEnable == "no")
 				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
 			
 			//if file > 1M need save new file;

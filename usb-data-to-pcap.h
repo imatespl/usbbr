@@ -76,6 +76,7 @@ struct pcap_usb_data {
 	uint16_t   bus_id;
 	uint32_t   data_len;
 	bool       isNeedResaveFile;
+	bool       isFilterData;
 	std::vector<unsigned char> data;
 };
 

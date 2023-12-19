@@ -178,8 +178,8 @@ void *ep_loop_write(void *arg) {
 			}
 			// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
 			// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-			if (data[1] != 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
-				|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56)) {
+			if (needSaveddata(data)) {
+				std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 				std::vector<unsigned char> data_vec(data, data + length);
 				pcap_usb_data pud = {
 					.event_type = URB_SUBMIT,
@@ -201,7 +201,7 @@ void *ep_loop_write(void *arg) {
 				default:
 					break;
 				}
-				sendDataToPcapFile(&pud);
+				sendDataToPcapFile(&pud, filterSaveEnable);
 			}
 			if (data)
 				delete[] data;
@@ -264,8 +264,8 @@ void *ep_loop_read(void *arg) {
 			}
 			// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
 			// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-			if (data[1] != 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
-				|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56) || needResaveFile) {
+			if (needSaveddata(data)|| needResaveFile) {
+				std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 				std::vector<unsigned char> data_vec(data, data + nbytes);
 				pcap_usb_data pud = {
 					.event_type = URB_COMPLETE,
@@ -291,7 +291,7 @@ void *ep_loop_read(void *arg) {
 				if (needResaveFile)
 					pud.isNeedResaveFile = true;
 				
-				sendDataToPcapFile(&pud);
+				sendDataToPcapFile(&pud, filterSaveEnable);
 			}
 			if (nbytes >= 0) {
 				memcpy(io.data, data, nbytes);
@@ -736,8 +736,8 @@ void ep0_loop(int fd) {
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
 							// data[1] not eq 0x00 or data[3] data[4] eq 0x50 0x49 or data[3] data[4] eq 0x43 0x49 or
 							// data[3] data[4] eq 0x50 0x56 or data[3] data[4] eq 0x43 0x56 
-							if (data[1] != 0x00 || (data[3] == 0x50 && data[4] == 0x49) || (data[3] == 0x43 && data[49])
-								|| (data[3] == 0x50 && data[4] == 0x56) || (data[3] == 0x43 && data[4] == 0x56)) {
+							if (needSaveddata(data)) {
+								std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 								std::vector<unsigned char> data_vec(data, data + length);
 								pcap_usb_data pud = {
 									.event_type = URB_SUBMIT,
@@ -759,7 +759,7 @@ void ep0_loop(int fd) {
 								default:
 									break;
 								}
-	 							sendDataToPcapFile(&pud);
+	 							sendDataToPcapFile(&pud, filterSaveEnable);
 							}
 							if (data)
 								delete[] data;

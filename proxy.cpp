@@ -319,7 +319,7 @@ void *ep_loop_read(void *arg) {
 					default:
 						break;
 					}
-					// when need resave file push data to queue, to notifly write pcap thread 
+					// when need resave file push data to queue, to notify write pcap thread 
 					if (needResaveFile)
 						pud.isNeedResaveFile = true;
 					

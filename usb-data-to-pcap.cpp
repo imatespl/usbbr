@@ -51,6 +51,7 @@ void usb_linux_64_byte_header(pcap_usb_header_mmapped* pusbhdr, pcap_usb_data* p
 
 // Function for the file writing thread
 void writeUSBPcapThread() {
+	std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 	// Set up libpcap for writing
 	pcap_t* pcap = pcap_open_dead(DLT_USB_LINUX_MMAPPED, MAX_PACKET_SIZE);
 	pcap_dumper_t* pcap_dumper = pcap_dump_open(pcap, PCAP_FILE.c_str());
@@ -93,7 +94,9 @@ void writeUSBPcapThread() {
 			gettimeofday(&pkthdr.ts, NULL);
 			pkthdr.caplen = pcap_total_len;
 			pkthdr.len = pcap_total_len;
-			if (!pud.isNeedResaveFile)
+			if (!pud.isNeedResaveFile && filterSaveEnable == "yes")
+				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
+			else
 				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
 			
 			//if file > 1M need save new file;

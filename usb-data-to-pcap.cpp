@@ -19,6 +19,8 @@ std::mutex pcapDumpMutex;
 std::condition_variable pcapDumpCondition;
 bool isPcapDumpDone = false;
 
+pcap_t* pcap = NULL;
+pcap_dumper_t* pcap_dumper = NULL;
 size_t file_size = 0;
 size_t max_file_size = 1024 * 1024; //max size is 1M;
 
@@ -53,8 +55,8 @@ void usb_linux_64_byte_header(pcap_usb_header_mmapped* pusbhdr, pcap_usb_data* p
 void writeUSBPcapThread() {
 	std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 	// Set up libpcap for writing
-	pcap_t* pcap = pcap_open_dead(DLT_USB_LINUX_MMAPPED, MAX_PACKET_SIZE);
-	pcap_dumper_t* pcap_dumper = pcap_dump_open(pcap, PCAP_FILE.c_str());
+	pcap = pcap_open_dead(DLT_USB_LINUX_MMAPPED, MAX_PACKET_SIZE);
+	pcap_dumper = pcap_dump_open(pcap, PCAP_FILE.c_str());
 	pcap_usb_header_mmapped pusbhdr;
 	unsigned char dataBytes[MAX_PACKET_SIZE] = {0};
 	
@@ -63,7 +65,7 @@ void writeUSBPcapThread() {
 		std::unique_lock<std::mutex> lock(usbDataMutex);
 
 		// Wait for data to be available or processing to be done
-		usbDataCondition.wait(lock, [&] { return !usbDataQueue.empty() || pcapDumpNeedDone; });
+		usbDataCondition.wait(lock, [&] { return !usbDataQueue.empty(); });
 
 		// Process data and write to file
 		while (!usbDataQueue.empty()) {
@@ -90,8 +92,8 @@ void writeUSBPcapThread() {
 			//if file > 1M need save new file;
 			file_size += pcap_total_len;
 			if (file_size >= max_file_size || pud.isNeedResaveFile) {
-    				pcap_dump_close(pcap_dumper);
-    				pcap_close(pcap);
+    			pcap_dump_close(pcap_dumper);
+    			pcap_close(pcap);
 				std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
 				system(save_command.c_str());
 				//reinit pcap dumper
@@ -103,20 +105,7 @@ void writeUSBPcapThread() {
 			usbDataQueue.pop_front();
 
 		}
-
-		if (pcapDumpNeedDone) {
-			pcap_dump_close(pcap_dumper);
-			pcap_close(pcap);
-			std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
-			system(save_command.c_str());
-			{
-				std::unique_lock<std::mutex> lock(pcapDumpMutex);
-				isPcapDumpDone = true;
-				pcapDumpCondition.notify_one();
-			}
-		}
 	}
-
 }
 
 void sendDataToPcapFile(pcap_usb_data* pud) {

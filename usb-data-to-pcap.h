@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <stdint.h>
 #include <vector>
+#include <pcap.h>
 
 //pcap file name
 extern std::string PCAP_FILE;
@@ -90,6 +91,9 @@ extern bool pcapDumpNeedDone;
 extern std::mutex pcapDumpMutex;
 extern std::condition_variable pcapDumpCondition;
 extern bool isPcapDumpDone;
+
+extern pcap_t* pcap;
+extern pcap_dumper_t* pcap_dumper;
 
 void writeUSBPcapThread();
 void sendDataToPcapFile(pcap_usb_data* pud);

@@ -20,23 +20,20 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 			void *user_data __attribute__((unused))) {
 	printf("Hotplug event\n");
 
-	{
-		std::unique_lock<std::mutex> lock(usbDataMutex);
-		pcapDumpNeedDone = true;
-	}
-	usbDataCondition.notify_one();
 	while (true) {
-		std::unique_lock<std::mutex> lock(pcapDumpMutex);
-		pcapDumpCondition.wait(lock, [&] { return isPcapDumpDone; });
-		if (isPcapDumpDone) {
+		if (usbDataQueue.empty()) {
+			pcap_dump_close(pcap_dumper);
+			pcap_close(pcap);
+			std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
+			system(save_command.c_str());			
 			close(raw_gadget_fd);
 			//restart self becasue device remove
 			if (execv(self_prog[0], self_prog) == -1) {
-				printf("restart self process failed\n");
-				
+				printf("restart self process failed\n");	
 			}
 		
 		}
+		usleep(30000);
 		break;
 	}
 	return 0;
@@ -45,7 +42,7 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 void *hotplug_monitor(void *arg __attribute__((unused))) {
 	printf("Start hotplug_monitor thread, thread id(%d)\n", gettid());
 	while(true) {
-		usleep(3000);
+		usleep(30000);
 		libusb_handle_events_completed(NULL, NULL);
 	}
 }

@@ -109,6 +109,8 @@ void writeUSBPcapThread() {
 				//reinit pcap dumper
 				pcap = pcap_open_dead(DLT_USB_LINUX_MMAPPED, MAX_PACKET_SIZE);
 				pcap_dumper = pcap_dump_open(pcap, PCAP_FILE.c_str());
+				//reset file_size
+				file_size = 0;
 			}
 			delete[] dataBytes;
 			delete[] pcapDataBytes;

@@ -56,7 +56,8 @@ void writeUSBPcapThread() {
 	pcap_t* pcap = pcap_open_dead(DLT_USB_LINUX_MMAPPED, MAX_PACKET_SIZE);
 	pcap_dumper_t* pcap_dumper = pcap_dump_open(pcap, PCAP_FILE.c_str());
 	pcap_usb_header_mmapped pusbhdr;
-	unsigned char* dataBytes = NULL;
+	unsigned char dataBytes[MAX_PACKET_SIZE] = {0};
+	
 
 	while (true) {
 		std::unique_lock<std::mutex> lock(usbDataMutex);
@@ -68,36 +69,23 @@ void writeUSBPcapThread() {
 		while (!usbDataQueue.empty()) {
 			pcap_usb_data pud = usbDataQueue.front();
 			usb_linux_64_byte_header(&pusbhdr, &pud);
-			// Convert std::vector to unsigned char[]
+			
 			size_t dataVectorSize = pud.data.size();
-			if (dataVectorSize < 64) {
-				//need add zero to data end to len 64
-				dataBytes = new unsigned char[64];
-				std::memset(dataBytes, 0, 64);
-				for (size_t i = 0; i < dataVectorSize; ++i) {
-					dataBytes[i] = pud.data[i];
-				}
-			}
-			else {
-				dataBytes = new unsigned char[dataVectorSize];
-				for (size_t i = 0; i < dataVectorSize; ++i) {
-					dataBytes[i] = pud.data[i];
-				}
-			}
 			size_t pcap_total_len = sizeof(pusbhdr) + (dataVectorSize < 64 ? 64 : dataVectorSize);
-			unsigned char* pcapDataBytes = new unsigned char[pcap_total_len];
-			std::memset(pcapDataBytes, 0, pcap_total_len);
-			memcpy(pcapDataBytes, (char*)&pusbhdr, sizeof(pusbhdr));
-			memcpy(pcapDataBytes + sizeof(pusbhdr), dataBytes, dataVectorSize);
+			std::memset(dataBytes, 0, MAX_PACKET_SIZE);
+			memcpy(dataBytes, (char*)&pusbhdr, sizeof(pusbhdr));
+			for (size_t i = 0; i < dataVectorSize; ++i) {
+				dataBytes[sizeof(pusbhdr) + i] = pud.data[i];
+			}			
 			// Write the received data to PCAP file
 			struct pcap_pkthdr pkthdr;
 			gettimeofday(&pkthdr.ts, NULL);
 			pkthdr.caplen = pcap_total_len;
 			pkthdr.len = pcap_total_len;
 			if (filterSaveEnable == "yes" && pud.isFilterData)
-				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
+				pcap_dump((u_char*)pcap_dumper, &pkthdr, dataBytes);
 			else if (filterSaveEnable == "no")
-				pcap_dump((u_char*)pcap_dumper, &pkthdr, pcapDataBytes);
+				pcap_dump((u_char*)pcap_dumper, &pkthdr, dataBytes);
 			
 			//if file > 1M need save new file;
 			file_size += pcap_total_len;
@@ -112,8 +100,6 @@ void writeUSBPcapThread() {
 				//reset file_size
 				file_size = 0;
 			}
-			delete[] dataBytes;
-			delete[] pcapDataBytes;
 			usbDataQueue.pop_front();
 
 		}

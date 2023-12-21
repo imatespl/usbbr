@@ -92,8 +92,8 @@ void writeUSBPcapThread() {
 			//if file > 1M need save new file;
 			file_size += pcap_total_len;
 			if (file_size >= max_file_size || pud.isNeedResaveFile) {
-    			pcap_dump_close(pcap_dumper);
-    			pcap_close(pcap);
+				pcap_dump_close(pcap_dumper);
+				pcap_close(pcap);
 				std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
 				system(save_command.c_str());
 				//reinit pcap dumper

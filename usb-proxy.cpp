@@ -296,6 +296,14 @@ int main(int argc, char **argv)
 		printf("Error Load conf file: %s\n", conf_file.c_str());
 		return 1;
 	}
+	if (usbbr_config["per_save_file_size"].asInt() < 1) {
+		printf("Error: per_save_file_size value minimal is 1K\n");
+		return 1;
+	}
+	if (usbbr_config["save_file_interval"].asInt() < 1) {
+		printf("Error: save_file_interval value minimal is 1 minute\n");
+		return 1;
+	}
 	conf.close();
 
 	if (injection_enabled) {

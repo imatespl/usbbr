@@ -3,9 +3,11 @@
         "`filter_save_enable` is the key of enable or disable filter usb data save to pcap, ",
         "`yes` is enable, `no` disable will save all data",
         "`filter_save_rules` is active when `filter_save_enable` set to `yes`," ,
-        "`data_offset` is first filter value position of the usb data",
+        "`data_offset` is first filter value position of the usb data, start from 1",
         "`value` is the data hex value, need add `\\x` before hex value",
-        "`is_equal` is set filter value equal or not equal usb data in `data_offset` position"
+        "`is_equal` is set filter value equal or not equal usb data in `data_offset` position",
+	"`per_save_file_size` how many data can write to one file, 1024 is 1M, 1 is 1K, min is 1K",
+	"`save_file_interval` is time interval save one file, 10 is 10 minute, min is 1 minute"
     ],
 	"filter_save_enable": "yes",
 	"filter_save_rules": [
@@ -34,5 +36,7 @@
 			"value": "\\x50\\x56",
 			"is_equal": "yes"
 		}		
-	]
+	],
+	"per_save_file_size": 1024,
+	"save_file_interval": 10
 }

@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include "usb-data-to-pcap.h"
 #include "misc.h"
+#include <chrono>
 
 std::string PCAP_FILE = "/data/usb_running.pcap";
 std::deque<pcap_usb_data> usbDataQueue;
@@ -22,7 +23,8 @@ bool isPcapDumpDone = false;
 pcap_t* pcap = NULL;
 pcap_dumper_t* pcap_dumper = NULL;
 size_t file_size = 0;
-size_t max_file_size = 1024 * 1024; //max size is 1M;
+size_t max_file_size = 1024 * usbbr_config["per_save_file_size"].asInt(); //max size is 1M;
+size_t save_file_inter = 60 * usbbr_config["save_file_interval"].asInt();
 
 void usb_linux_64_byte_header(pcap_usb_header_mmapped* pusbhdr, pcap_usb_data* pud ) {
 	struct timeval    now;
@@ -59,6 +61,7 @@ void writeUSBPcapThread() {
 	pcap_dumper = pcap_dump_open(pcap, PCAP_FILE.c_str());
 	pcap_usb_header_mmapped pusbhdr;
 	unsigned char dataBytes[MAX_PACKET_SIZE] = {0};
+	std::chrono::time_point<std::chrono::system_clock> lastSaveTime;
 	
 
 	while (true) {
@@ -88,10 +91,18 @@ void writeUSBPcapThread() {
 				pcap_dump((u_char*)pcap_dumper, &pkthdr, dataBytes);
 			else if (filterSaveEnable == "no")
 				pcap_dump((u_char*)pcap_dumper, &pkthdr, dataBytes);
+
+			//
+			// If file > usbbr_config["per_save_file_size"] K or big card receive eject command
+			// or time duration > usbbr_config["save_file_interval"] seconds need save new file;
+			 if (lastSaveTime.time_since_epoch().count() == 0) {
+				lastSaveTime = std::chrono::system_clock::now();
+			} 
+			auto currentTime = std::chrono::system_clock::now();
+			auto timeDuration = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastSaveTime);
 			
-			//if file > 1M need save new file;
 			file_size += pcap_total_len;
-			if (file_size >= max_file_size || pud.isNeedResaveFile) {
+			if (file_size > 0 && (file_size >= max_file_size || pud.isNeedResaveFile || timeDuration.count() >= save_file_inter)) {
 				pcap_dump_close(pcap_dumper);
 				pcap_close(pcap);
 				std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
@@ -101,6 +112,8 @@ void writeUSBPcapThread() {
 				pcap_dumper = pcap_dump_open(pcap, PCAP_FILE.c_str());
 				//reset file_size
 				file_size = 0;
+				//update lastSaveTime
+				lastSaveTime = std::chrono::system_clock::now();
 			}
 			usbDataQueue.pop_front();
 

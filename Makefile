@@ -1,6 +1,5 @@
 LDFLAG=-lusb-1.0 -pthread -ljsoncpp -lpcap
 
-TARGET=Debug
 ifndef CFLAGS
 	ifeq ($(TARGET),Debug)
 		CFLAGS=-Wall -Wextra -g

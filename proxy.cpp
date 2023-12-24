@@ -180,8 +180,9 @@ void *ep_loop_write(void *arg) {
 			// Just save data match filter rules
 			std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 			if (filterSaveEnable == "yes") {
-				if (needSaveData(data)) {
-					std::vector<unsigned char> data_vec(data, data + length);
+				std::vector<unsigned char> data_vec(data, data + length);
+				if (needSaveData(data_vec)) {
+					//std::vector<unsigned char> data_vec(data, data + length);
 					pcap_usb_data pud = {
 						.event_type = URB_SUBMIT,
 						.transfer_type = URB_INTERRUPT,
@@ -295,9 +296,10 @@ void *ep_loop_read(void *arg) {
 			// Just save data match filter rules
 			std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 			if (filterSaveEnable == "yes") {
+				std::vector<unsigned char> data_vec(data, data+nbytes);
 				// filter match data or need resave file and also match the filter rule
-				if (needSaveData(data)) {
-					std::vector<unsigned char> data_vec(data, data + nbytes);
+				if (needSaveData(data_vec)) {
+					//std::vector<unsigned char> data_vec(data, data + nbytes);
 					pcap_usb_data pud = {
 						.event_type = URB_COMPLETE,
 						.transfer_type = URB_INTERRUPT,
@@ -832,8 +834,9 @@ void ep0_loop(int fd) {
 							// Just save data match filter rules
 							std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 							if (filterSaveEnable == "yes") {
-								if (needSaveData(data)) {
-									std::vector<unsigned char> data_vec(data, data + length);
+								std::vector<unsigned char> data_vec(data, data + length);
+								if (needSaveData(data_vec)) {
+									//std::vector<unsigned char> data_vec(data, data + length);
 									pcap_usb_data pud = {
 										.event_type = URB_SUBMIT,
 										.transfer_type = URB_INTERRUPT,
@@ -842,7 +845,7 @@ void ep0_loop(int fd) {
 										.bus_id = (uint16_t)bus_id,
 										.data_len = (uint32_t)length,
 										.isNeedResaveFile = false,
-										.isFilterData = false,
+										.isFilterData = true,
 										.data = data_vec
 		                                                        };
 									switch (ep->endpoint.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
@@ -855,6 +858,7 @@ void ep0_loop(int fd) {
 									default:
 										break;
 									}
+									printf("bbbbbbb\n");
 		 							sendDataToPcapFile(&pud);
 								}
 							}

@@ -45,4 +45,4 @@ extern std::mutex pcap_mtx;
 extern pthread_t pcap_monitor_size_thread;
 extern void* pcap_file_max_and_resave(void *arg __attribute__((unused)));
 
-bool needSaveData(unsigned char* data);
+bool needSaveData(std::vector<unsigned char> &data);

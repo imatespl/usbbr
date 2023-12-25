@@ -158,7 +158,9 @@ void *pcap_file_max_and_resave(void *arg __attribute__((unused))) {
 	}
 }
 
-bool needSaveData(std::vector<unsigned char> &data) {
+bool needSaveData(std::vector<unsigned char>& data) {
+	if (data.empty())
+		return false;
 	std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
 	if (filterSaveEnable == "yes") {
 		const Json::Value& filterSaveRules = usbbr_config["filter_save_rules"];

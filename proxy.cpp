@@ -566,8 +566,14 @@ void ep0_loop(int fd) {
 
 		// Normally, we would only need to check for USB_RAW_EVENT_RESET to handle a reset event.
 		// However, dwc2 is buggy and it reports a disconnect event instead of a reset.
-		if (event.inner.type == USB_RAW_EVENT_RESET || event.inner.type == USB_RAW_EVENT_DISCONNECT) {
-			printf("Resetting device\n");
+		// Just use on musb-hdrc remove disconnect
+		if (event.inner.type == USB_RAW_EVENT_RESET) {
+			printf("Resetting device and restart self process\n");
+			// This is a temp solve
+			close(raw_gadget_fd);
+			if (execv(self_prog[0], self_prog) == -1)
+					printf("restart self process failed\n");
+
 			// Normally, we would need to stop endpoint threads first and only then
 			// reset the device. However, libusb does not allow interrupting queued
 			// requests submitted via sync I/O. Thus, we reset the proxied device to

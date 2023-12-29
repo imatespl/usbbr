@@ -570,10 +570,24 @@ void ep0_loop(int fd) {
 		if (event.inner.type == USB_RAW_EVENT_RESET) {
 			printf("Resetting device and restart self process\n");
 			// This is a temp solve
-			close(raw_gadget_fd);
-			if (execv(self_prog[0], self_prog) == -1)
-					printf("restart self process failed\n");
-
+			if (set_configuration_done_once) {
+				while (true) {
+					if (usbDataQueue.empty()) {
+						pcap_dump_close(pcap_dumper);
+						pcap_close(pcap);
+						std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
+						system(save_command.c_str());			
+						close(raw_gadget_fd);
+						//restart self becasue device remove
+						if (execv(self_prog[0], self_prog) == -1) {
+							printf("restart self process failed\n");	
+						}
+					
+					}
+					usleep(30000);
+					break;
+				}
+			}
 			// Normally, we would need to stop endpoint threads first and only then
 			// reset the device. However, libusb does not allow interrupting queued
 			// requests submitted via sync I/O. Thus, we reset the proxied device to

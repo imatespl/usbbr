@@ -3,13 +3,13 @@
 #include "proxy.h"
 #include "misc.h"
 #include <set>
-
+#include <thread>
+#include "usb-data-to-pcap.h"
 int verbose_level = 0;
 bool please_stop_ep0 = false;
-bool please_stop_eps = false;
+volatile bool please_stop_eps = false; // Use volatile to mark as atomic.
 char** self_prog = NULL;
 int raw_gadget_fd = 0;
-int bus_number = 0;
 int pcap_pid = -1;
 std::mutex pcap_mtx;
 pthread_t pcap_monitor_size_thread;
@@ -20,6 +20,10 @@ std::set<int> dev_endpoint_in_list;
 bool injection_enabled = false;
 std::string injection_file = "injection.json";
 Json::Value injection_config;
+
+std::string conf_file = "/etc/usbbr.json";
+Json::Value usbbr_config;
+
 
 void usage() {
 	printf("Usage:\n");
@@ -120,6 +124,7 @@ int setup_host_usb_desc() {
 					printf("InterfaceNumber %x AlternateSetting %x has no endpoint, skip\n",
 						temp_device_altsetting.bInterfaceNumber,
 						temp_device_altsetting.bAlternateSetting);
+					temp_altsettings[k].endpoints = NULL;
 					continue;
 				}
 
@@ -168,11 +173,11 @@ int setup_host_usb_desc() {
 int set_host_device_eps_map(int fd) {
 	struct usb_raw_eps_info info;
 	memset(&info, 0, sizeof(info));
-	
+
 	int num = usb_raw_eps_info(fd, &info);
 	std::vector<int> raw_eps_addr_in;
 	std::vector<int> raw_eps_addr_out;
-	
+
 	for (int i = 0; i < num; i++) {
 		if (info.eps[i].caps.dir_out) {
 			int info_endpoint_address = info.eps[i].addr | USB_DIR_OUT;
@@ -217,8 +222,6 @@ int main(int argc, char **argv)
 	int vendor_id = -1;
 	int product_id = -1;
 
-	//kill all tcpdump it may dead,not need
-	stop_all_tcpdump_usbmon();
 	//store argv to self_prog will use hotplug to restart self process
 	self_prog = new char* [argc + 1];
 	for (int i = 0; i < argc; i++) {
@@ -284,6 +287,24 @@ int main(int argc, char **argv)
 	printf("Driver is: %s\n", driver);
 	printf("vendor_id is: %d\n", vendor_id);
 	printf("product_id is: %d\n", product_id);
+	// Load conf file
+	Json::Reader confReader;
+	std::ifstream conf(conf_file.c_str());
+	if (confReader.parse(conf, usbbr_config))
+		printf("Load conf file: %s\n", conf_file.c_str());
+	else {
+		printf("Error Load conf file: %s\n", conf_file.c_str());
+		return 1;
+	}
+	if (usbbr_config["per_save_file_size"].asInt() < 1) {
+		printf("Error: per_save_file_size value minimal is 1K\n");
+		return 1;
+	}
+	if (usbbr_config["save_file_interval"].asInt() < 1) {
+		printf("Error: save_file_interval value minimal is 1 minute\n");
+		return 1;
+	}
+	conf.close();
 
 	if (injection_enabled) {
 		printf("Injection enabled\n");
@@ -308,6 +329,8 @@ int main(int argc, char **argv)
 		ifs.close();
 	}
 
+	//start write pcap thread
+	std::thread writerThread(writeUSBPcapThread);
 	while (connect_device(vendor_id, product_id)) {
 		sleep(1);
 	}
@@ -333,7 +356,9 @@ int main(int argc, char **argv)
 		for (int j = 0; j < bNumInterfaces; j++) {
 			int num_altsetting = device_config_desc[i]->interface[j].num_altsetting;
 			for (int k = 0; k < num_altsetting; k++) {
-				delete[] host_device_desc.configs[i].interfaces[j].altsettings[k].endpoints;
+				if (host_device_desc.configs[i].interfaces[j].altsettings[k].endpoints) {
+					delete[] host_device_desc.configs[i].interfaces[j].altsettings[k].endpoints;
+				}
 			}
 			delete[] host_device_desc.configs[i].interfaces[j].altsettings;
 		}
@@ -349,10 +374,6 @@ int main(int argc, char **argv)
 		pthread_join(hotplug_monitor_thread, NULL)) {
 		fprintf(stderr, "Error join hotplug_monitor_thread\n");
 	}
-	if (pcap_monitor_size_thread &&
-		pthread_join(pcap_monitor_size_thread, NULL)) {
-			fprintf(stderr, "Error join pcap_monitor_size_thread\n");
-		}
-
+	writerThread.join();
 	return 0;
 }

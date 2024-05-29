@@ -2,12 +2,34 @@
 #include <bits/stdc++.h>
 
 #include "misc.h"
+#include "device-libusb.h"
 
 
+
+std::vector<unsigned char> convertHexStringToBytes(const std::string& hexString) {
+    std::vector<unsigned char> bytes;
+
+    // Skip the "\\x" prefix
+    for (size_t i = 2; i < hexString.size(); i += 4) {
+        std::string byteString = hexString.substr(i, 4);
+
+        // Convert the substring to an integer
+        unsigned int byteValue;
+        std::stringstream(byteString) >> std::hex >> byteValue;
+
+        // Convert the integer to an unsigned char
+        bytes.push_back(static_cast<unsigned char>(byteValue));
+    }
+
+    return bytes;
+}
 
 std::string hexToAscii(std::string input) {
 	std::string output = input;
 	size_t pos = output.find("\\x");
+	if (output == "\\x00")
+	       return  "\x0";
+
 	while (pos != std::string::npos) {
 		std::string substr = output.substr(pos + 2, 2);
 
@@ -130,8 +152,36 @@ void *pcap_file_max_and_resave(void *arg __attribute__((unused))) {
 				std::string pcap_file_save_name = pcap_file_save();
 				printf("pcap is large 1M, size is %d resave new file\n", pcap_filesize);
 				stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-				pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
+				pcap_pid = start_tcpdump_usbmon(bus_id, pcap_file_name);
 			}
 		}
 	}
+}
+
+bool needSaveData(std::vector<unsigned char>& data) {
+	if (data.empty())
+		return false;
+	std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+	if (filterSaveEnable == "yes") {
+		const Json::Value& filterSaveRules = usbbr_config["filter_save_rules"];
+		for (const auto& rule : filterSaveRules) {
+			int dataOffset = rule["data_offset"].asInt() - 1;
+			std::vector<unsigned char> filterValue = convertHexStringToBytes(rule["value"].asString());
+			std::string isEqual = rule["is_equal"].asString();
+			if (isEqual == "yes") {
+				if (std::equal(filterValue.begin(), filterValue.end(), data.begin()+dataOffset))
+					return true;
+			}
+			else if (isEqual == "no") {
+				if (!std::equal(filterValue.begin(), filterValue.end(), data.begin()+dataOffset))
+					return true;
+			}
+
+		}
+
+	} 
+	else if (filterSaveEnable == "no")
+		return true;
+	
+	return false;
 }

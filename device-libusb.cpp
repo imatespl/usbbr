@@ -1,9 +1,13 @@
 #include "device-libusb.h"
+#include "usb-data-to-pcap.h"
 
 libusb_device 			**devs;
 libusb_device_handle 		*dev_handle;
 libusb_context 			*context = NULL;
 libusb_hotplug_callback_handle	callback_handle = -1;
+uint8_t    bus_id;
+uint8_t    device_address;
+
 
 struct libusb_device_descriptor		device_device_desc;
 struct libusb_config_descriptor		**device_config_desc;
@@ -16,19 +20,21 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 			void *user_data __attribute__((unused))) {
 	printf("Hotplug event\n");
 
-	//stop usb_tcpdump
-	
-	std::string pcap_file_name = pcap_file();
-	{
-		std::lock_guard<std::mutex> lock(pcap_mtx);
-		std::string pcap_file_save_name = pcap_file_save();
-		stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-		//must close raw_gadget fd before restart self
-		close(raw_gadget_fd);
-		//restart self becasue device remove
-		if (execv(self_prog[0], self_prog) == -1) {
-			printf("restart self process failed\n");
+	while (true) {
+		if (usbDataQueue.empty()) {
+			pcap_dump_close(pcap_dumper);
+			pcap_close(pcap);
+			std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
+			system(save_command.c_str());			
+			close(raw_gadget_fd);
+			//restart self becasue device remove
+			if (execv(self_prog[0], self_prog) == -1) {
+				printf("restart self process failed\n");	
+			}
+		
 		}
+		usleep(30000);
+		break;
 	}
 	return 0;
 }
@@ -36,7 +42,7 @@ int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 void *hotplug_monitor(void *arg __attribute__((unused))) {
 	printf("Start hotplug_monitor thread, thread id(%d)\n", gettid());
 	while(true) {
-		usleep(3000);
+		usleep(30000);
 		libusb_handle_events_completed(NULL, NULL);
 	}
 }
@@ -106,22 +112,19 @@ int connect_device(int vendor_id, int product_id) {
 
 			if (device_device_desc.bDeviceClass == LIBUSB_CLASS_HUB)
 				continue;
-			
+
 			if (vendor_id == -1 && product_id == -1) {
 				//orangepc just proxy usb port 3(usb2.0) port 6(usb1.1)
 				//phy port is port 3
-				bus_number = libusb_get_bus_number(dvc);
-				std::string pcap_file_name = pcap_file();
-				pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
-				pthread_create(&pcap_monitor_size_thread, 0,
-					pcap_file_max_and_resave, nullptr);
+				bus_id = libusb_get_bus_number(dvc);
+				device_address = libusb_get_device_address(dvc);
 				found = dvc;
-
-
 				break;
 			}
 			else if ((vendor_id == device_device_desc.idVendor || vendor_id == LIBUSB_HOTPLUG_MATCH_ANY) &&
 				(product_id == device_device_desc.idProduct || product_id == LIBUSB_HOTPLUG_MATCH_ANY)) {
+				bus_id = libusb_get_bus_number(dvc);
+				device_address = libusb_get_device_address(dvc);
 				found = dvc;
 				break;
 			}
@@ -130,7 +133,7 @@ int connect_device(int vendor_id, int product_id) {
 		if (verbose_level && vendor_id != -1 && product_id != -1)
 			printf("Target device not found\n");
 		libusb_free_device_list(devs, 1);
-		usleep(2000);
+		usleep(20000);
 	}
 
 	result = libusb_open(found, &dev_handle);
@@ -144,7 +147,7 @@ int connect_device(int vendor_id, int product_id) {
 		return result;
 	}
 
-	result = libusb_set_auto_detach_kernel_driver(dev_handle, 1);
+	result = libusb_set_auto_detach_kernel_driver(dev_handle, 0);
 	if (result != LIBUSB_SUCCESS) {
 		fprintf(stderr, "libusb_set_auto_detach_kernel_driver() failed: %s\n",
 				libusb_strerror((libusb_error)result));
@@ -198,6 +201,14 @@ int connect_device(int vendor_id, int product_id) {
 	}
 
 	return 0;
+}
+
+void reset_device() {
+	int result = libusb_reset_device(dev_handle);
+	if (result != LIBUSB_SUCCESS) {
+		fprintf(stderr, "Error resetting device: %s\n",
+				libusb_strerror((libusb_error)result));
+	}
 }
 
 void set_configuration(int configuration) {
@@ -257,7 +268,7 @@ int control_request(const usb_ctrlrequest *setup_packet, int *nbytes,
 	return 0;
 }
 
-void send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
+int send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 			int length) {
 	int transferred;
 	int attempt = 0;
@@ -319,9 +330,10 @@ void send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 	//		printf("restart self process failed\n");
 	//	}
 	}
+	return result;
 }
 
-void receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
+int receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
 			uint8_t **dataptr, int *length, int timeout) {
 	int result = LIBUSB_SUCCESS;
 	timeout = 0;
@@ -370,4 +382,5 @@ void receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
 		//	printf("restart self process failed\n");
 		//}
 	}
+	return result;
 }

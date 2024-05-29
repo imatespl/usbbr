@@ -5,9 +5,10 @@
 #include "device-libusb.h"
 #include "misc.h"
 #include "regex"
+#include "usb-data-to-pcap.h"
 
 std::mutex mtx;
-std::queue<int> eject_command_control;
+bool eject_command_send = false;
 
 void injection(struct usb_raw_transfer_io &io, Json::Value patterns, std::string replacement_hex, bool &data_modified) {
 	std::string data(io.data, io.inner.length);
@@ -104,11 +105,20 @@ void printData(struct usb_raw_transfer_io io, __u8 bEndpointAddress, std::string
 	printf("\n");
 }
 
+void print_data_to_endpoint(struct usb_raw_transfer_io io, __u8 from_endpoint_address, __u8 to_endpoint_address, std::string transfer_type, std::string dir) {
+	printf("Sending data from EP%x to EP%x(%s_%s):", from_endpoint_address, to_endpoint_address,
+		transfer_type.c_str(), dir.c_str());
+	for (unsigned int i = 0; i < io.inner.length; i++) {
+		printf(" %02hhx", (unsigned)io.data[i]);
+	}
+	printf("\n");
+}
+
 void *ep_loop_write(void *arg) {
 	// Enable asynchronous cancellation
-	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	//pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	// Set cancellation type to deferred cancellation
-	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+	//pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	struct thread_info thread_info = *((struct thread_info*) arg);
 	int fd = thread_info.fd;
 	int ep_num = thread_info.ep_num;
@@ -123,7 +133,7 @@ void *ep_loop_write(void *arg) {
 
 	while (!please_stop_eps) {
 		// Check for cancellation
-		pthread_testcancel();
+		//pthread_testcancel();
 		assert(ep_num != -1);
 		if (data_queue->size() == 0) {
 			usleep(100);
@@ -140,43 +150,89 @@ void *ep_loop_write(void *arg) {
 
 		if (ep.bEndpointAddress & USB_DIR_IN) {
 			int rv = usb_raw_ep_write(fd, (struct usb_raw_ep_io *)&io);
-			if (rv >= 0) {
+			if (rv < 0 && errno == ESHUTDOWN) {
+				printf("EP%x(%s_%s): device likely reset, stopping thread\n",
+					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
+				break;
+			}
+			else if (rv < 0) {
+				perror("usb_raw_ep_write()");
+				exit(EXIT_FAILURE);
+			}
+			else {
 				printf("EP%x(%s_%s): wrote %d bytes to host\n", ep.bEndpointAddress,
 					transfer_type.c_str(), dir.c_str(), rv);
 			}
 
-			//stop usb tcpdump when write eject command  response
-			int item = 0;
-			{
-				std::lock_guard<std::mutex> lock(mtx);
-				if (!eject_command_control.empty()) {
-					item = eject_command_control.front();
-					eject_command_control.pop();
-				}
-			}
-			if (item == 1) {
-				//stop usb_tcpdump
-				std::string pcap_file_name = pcap_file();
-				
-				{
-					std::lock_guard<std::mutex> lock(pcap_mtx);
-					std::string pcap_file_save_name = pcap_file_save();
-					//stop tcpdump will cause usb_raw_event_fetch receive EINTR,
-					//will casue EP0 thread stop, should catch this except in EP0
-					//thread
-					stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-					//here not restart all process, need start tcpdump process 
-					pcap_pid = start_tcpdump_usbmon(bus_number, pcap_file_name);
-				}
 
-			}
 		}
 		else {
 			int length = io.inner.length;
 			unsigned char *data = new unsigned char[length];
 			memcpy(data, io.data, length);
-			send_data(ep.bEndpointAddress, ep.bmAttributes, data, length);
-
+			int rv = send_data(ep.bEndpointAddress, ep.bmAttributes, data, length);
+			if (rv == LIBUSB_ERROR_NO_DEVICE) {
+				printf("EP%x(%s_%s): device likely reset, stopping thread\n",
+					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
+				break;
+			}
+			
+			// Just save data match filter rules
+			std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+			if (filterSaveEnable == "yes") {
+				std::vector<unsigned char> data_vec(data, data + length);
+				if (needSaveData(data_vec)) {
+					//std::vector<unsigned char> data_vec(data, data + length);
+					pcap_usb_data pud = {
+						.event_type = URB_SUBMIT,
+						.transfer_type = URB_INTERRUPT,
+						.endpoint_number = ep.bEndpointAddress,
+						.device_address = device_address,
+						.bus_id = (uint16_t)bus_id,
+						.data_len = (uint32_t)length,
+						.isNeedResaveFile = false,
+						.isFilterData = true,
+						.data = data_vec
+					};
+					switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+					case USB_ENDPOINT_XFER_ISOC:
+						pud.transfer_type = URB_ISOCHRONOUS;
+						break;
+					case USB_ENDPOINT_XFER_BULK:
+						pud.transfer_type = URB_BULK;
+						break;
+					default:
+						break;
+					}
+					sendDataToPcapFile(&pud);
+				}
+			}
+			// Default save all data
+			else {
+				std::vector<unsigned char> data_vec(data, data + length);
+				pcap_usb_data pud = {
+					.event_type = URB_SUBMIT,
+					.transfer_type = URB_INTERRUPT,
+					.endpoint_number = ep.bEndpointAddress,
+					.device_address = device_address,
+					.bus_id = (uint16_t)bus_id,
+					.data_len = (uint32_t)length,
+					.isNeedResaveFile = false,
+					.isFilterData = false,
+					.data = data_vec
+				};
+				switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+				case USB_ENDPOINT_XFER_ISOC:
+					pud.transfer_type = URB_ISOCHRONOUS;
+					break;
+				case USB_ENDPOINT_XFER_BULK:
+					pud.transfer_type = URB_BULK;
+					break;
+				default:
+					break;
+				}
+				sendDataToPcapFile(&pud);				
+			}
 			if (data)
 				delete[] data;
 		}
@@ -189,9 +245,9 @@ void *ep_loop_write(void *arg) {
 
 void *ep_loop_read(void *arg) {
 	// Enable asynchronous cancellation
-	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	//pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	// Set cancellation type to deferred cancellation
-	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+	//pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	struct thread_info thread_info = *((struct thread_info*) arg);
 	int fd = thread_info.fd;
 	int ep_num = thread_info.ep_num;
@@ -200,13 +256,14 @@ void *ep_loop_read(void *arg) {
 	std::string dir = thread_info.dir;
 	std::deque<usb_raw_transfer_io> *data_queue = thread_info.data_queue;
 	std::mutex *data_mutex = thread_info.data_mutex;
+	pcap_usb_data pud;
 
 	printf("Start reading thread for EP%02x, thread id(%d)\n",
 		ep.bEndpointAddress, gettid());
 
 	while (!please_stop_eps) {
 		// Check for cancellation
-		pthread_testcancel();
+		//pthread_testcancel();
 		assert(ep_num != -1);
 		struct usb_raw_transfer_io io;
 
@@ -219,8 +276,119 @@ void *ep_loop_read(void *arg) {
 				continue;
 			}
 
-			receive_data(ep.bEndpointAddress, ep.bmAttributes, ep.wMaxPacketSize, &data, &nbytes, 0);
+			int rv = receive_data(ep.bEndpointAddress, ep.bmAttributes, ep.wMaxPacketSize, &data, &nbytes, 0);
+			if (rv == LIBUSB_ERROR_NO_DEVICE) {
+				printf("EP%x(%s_%s): device likely reset, stopping thread\n",
+					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
+				break;
+			}
 
+			bool needResaveFile = false;
+			{
+				std::lock_guard<std::mutex> lock(mtx);
+				if (eject_command_send) {
+					needResaveFile = true;
+					eject_command_send = false;
+				}
+
+			}
+
+			// Just save data match filter rules
+			std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+			if (filterSaveEnable == "yes") {
+				std::vector<unsigned char> data_vec(data, data+nbytes);
+				// filter match data or need resave file and also match the filter rule
+				if (needSaveData(data_vec)) {
+					//std::vector<unsigned char> data_vec(data, data + nbytes);
+					pcap_usb_data pud = {
+						.event_type = URB_COMPLETE,
+						.transfer_type = URB_INTERRUPT,
+						.endpoint_number = ep.bEndpointAddress,
+						.device_address = device_address,
+						.bus_id = (uint16_t)bus_id,
+						.data_len = (uint32_t)nbytes,
+						.isNeedResaveFile = false,
+						.isFilterData = true,
+						.data = data_vec
+					};
+					switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+					case USB_ENDPOINT_XFER_ISOC:
+						pud.transfer_type = URB_ISOCHRONOUS;
+						break;
+					case USB_ENDPOINT_XFER_BULK:
+						pud.transfer_type = URB_BULK;
+						break;
+					default:
+						break;
+					}
+					// when need resave file push data to queue, to notify write pcap thread 
+					if (needResaveFile)
+						pud.isNeedResaveFile = true;
+					
+					sendDataToPcapFile(&pud);
+				}
+				
+				else if(needResaveFile) {
+					std::vector<unsigned char> data_vec(data, data + nbytes);
+					pcap_usb_data pud = {
+						.event_type = URB_COMPLETE,
+						.transfer_type = URB_INTERRUPT,
+						.endpoint_number = ep.bEndpointAddress,
+						.device_address = device_address,
+						.bus_id = (uint16_t)bus_id,
+						.data_len = (uint32_t)nbytes,
+						.isNeedResaveFile = false,
+						.isFilterData = false,
+						.data = data_vec
+					};
+					switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+					case USB_ENDPOINT_XFER_ISOC:
+						pud.transfer_type = URB_ISOCHRONOUS;
+						break;
+					case USB_ENDPOINT_XFER_BULK:
+						pud.transfer_type = URB_BULK;
+						break;
+					default:
+						break;
+					}
+					
+					if (needResaveFile)
+						pud.isNeedResaveFile = true;
+					
+					sendDataToPcapFile(&pud);
+				}
+			}
+			// Default save all data
+			else {
+				std::vector<unsigned char> data_vec(data, data + nbytes);
+				pcap_usb_data pud = {
+					.event_type = URB_COMPLETE,
+					.transfer_type = URB_INTERRUPT,
+					.endpoint_number = ep.bEndpointAddress,
+					.device_address = device_address,
+					.bus_id = (uint16_t)bus_id,
+					.data_len = (uint32_t)nbytes,
+					.isNeedResaveFile = false,
+					.isFilterData = false,
+					.data = data_vec
+				};
+				switch (ep.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+				case USB_ENDPOINT_XFER_ISOC:
+					pud.transfer_type = URB_ISOCHRONOUS;
+					break;
+				case USB_ENDPOINT_XFER_BULK:
+					pud.transfer_type = URB_BULK;
+					break;
+				default:
+					break;
+				}
+				
+				if (needResaveFile)
+					pud.isNeedResaveFile = true;
+				
+				sendDataToPcapFile(&pud);
+			
+			}
 			if (nbytes >= 0) {
 				memcpy(io.data, data, nbytes);
 				io.inner.ep = ep_num;
@@ -248,7 +416,16 @@ void *ep_loop_read(void *arg) {
 			io.inner.length = sizeof(io.data);
 
 			int rv = usb_raw_ep_read(fd, (struct usb_raw_ep_io *)&io);
-			if (rv >= 0) {
+			if (rv < 0 && errno == ESHUTDOWN) {
+				printf("EP%x(%s_%s): device likely reset, stopping thread\n",
+					ep.bEndpointAddress, transfer_type.c_str(), dir.c_str());
+				break;
+			}
+			else if (rv < 0) {
+				perror("usb_raw_ep_read()");
+				exit(EXIT_FAILURE);
+			}
+			else {
 				printf("EP%x(%s_%s): read %d bytes from host\n", ep.bEndpointAddress,
 						transfer_type.c_str(), dir.c_str(), rv);
 				io.inner.length = rv;
@@ -315,8 +492,8 @@ void process_eps(int fd, int config, int interface, int altsetting) {
 		}
 		else {
 			ep->thread_info.ep_num = usb_raw_ep_enable(fd, &ep->thread_info.endpoint);
-		}			
-		
+		}
+
 		printf("%s_%s: addr = %u, ep = #%d\n",
 			ep->thread_info.transfer_type.c_str(),
 			ep->thread_info.dir.c_str(),
@@ -338,34 +515,24 @@ void terminate_eps(int fd, int config, int interface, int altsetting) {
 	struct raw_gadget_altsetting *alt = &host_device_desc.configs[config]
 					.interfaces[interface].altsettings[altsetting];
 
+	please_stop_eps = true;
 
 	for (int i = 0; i < alt->interface.bNumEndpoints; i++) {
 		struct raw_gadget_endpoint *ep = &alt->endpoints[i];
-		/*When a child thread uses wait_for_completion_interruptible()
-		and the main thread calls pthread_join(), the main thread may
-		get blocked indefinitely because wait_for_completion_interruptible()
-		does not return until the completion of the associated task or until
-		it is interrupted.This situation occurs because pthread_join() waits
-		for the child thread to exit before continuing.*/
-		if (ep->thread_read) {
-			pthread_cancel(ep->thread_read);
-			if (pthread_join(ep->thread_read, NULL))
-				fprintf(stderr, "Error join thread_read\n");
+		if (ep->thread_read && pthread_join(ep->thread_read, NULL)) {
+			fprintf(stderr, "Error join thread_read\n");
 		}
-		if (ep->thread_write) {
-			pthread_cancel(ep->thread_write);
-			if (pthread_join(ep->thread_write, NULL))
-				fprintf(stderr, "Error join thread_write\n");
+		if (ep->thread_write && pthread_join(ep->thread_write, NULL)) {
+			fprintf(stderr, "Error join thread_write\n");
 		}
 		ep->thread_read = 0;
 		ep->thread_write = 0;
-
 		usb_raw_ep_disable(fd, ep->thread_info.ep_num);
 		ep->thread_info.ep_num = -1;
-
 		delete ep->thread_info.data_queue;
 		delete ep->thread_info.data_mutex;
 	}
+	please_stop_eps = false;
 
 }
 
@@ -388,13 +555,64 @@ void ep0_loop(int fd) {
 		log_event((struct usb_raw_event *)&event);
 
 		if (event.inner.length == 4294967295) {
-			//all usb hotplug remove will cause restart usbbr 
-			//when in this, is big card reader receive eject 
+			//all usb hotplug remove will cause restart usbbr
+			//when in this, is big card reader receive eject
 			//command stop tcpdump process cause, continue
 			continue;
 
 			//printf("End for EP0, thread id(%d)\n", gettid());
 			//return;
+		}
+
+		// Normally, we would only need to check for USB_RAW_EVENT_RESET to handle a reset event.
+		// However, dwc2 is buggy and it reports a disconnect event instead of a reset.
+		// Just use on musb-hdrc remove disconnect
+		if (event.inner.type == USB_RAW_EVENT_RESET) {
+			printf("Resetting device and restart self process\n");
+			// This is a temp solve
+			if (set_configuration_done_once) {
+				while (true) {
+					if (usbDataQueue.empty()) {
+						pcap_dump_close(pcap_dumper);
+						pcap_close(pcap);
+						std::string save_command = "pcap-process.sh "+PCAP_FILE+" "+pcap_file_save();
+						system(save_command.c_str());			
+						close(raw_gadget_fd);
+						//restart self becasue device remove
+						if (execv(self_prog[0], self_prog) == -1) {
+							printf("restart self process failed\n");	
+						}
+					
+					}
+					usleep(30000);
+					break;
+				}
+			}
+			// Normally, we would need to stop endpoint threads first and only then
+			// reset the device. However, libusb does not allow interrupting queued
+			// requests submitted via sync I/O. Thus, we reset the proxied device to
+			// force libusb to interrupt the requests and allow the endpoint threads
+			// to exit on please_stop_eps checks.
+			if (set_configuration_done_once)
+				please_stop_eps = true;
+			reset_device();
+			if (set_configuration_done_once) {
+				struct raw_gadget_config *config = &host_device_desc.configs[host_device_desc.current_config];
+				printf("Stopping endpoint threads\n");
+				for (int i = 0; i < config->config.bNumInterfaces; i++) {
+					struct raw_gadget_interface *iface = &config->interfaces[i];
+					int interface_num = iface->altsettings[iface->current_altsetting]
+						.interface.bInterfaceNumber;
+					terminate_eps(fd, host_device_desc.current_config, i,
+							iface->current_altsetting);
+					release_interface(interface_num);
+					iface->current_altsetting = 0;
+				}
+				printf("Endpoint threads stopped\n");
+				host_device_desc.current_config = 0;
+				set_configuration_done_once = false;
+			}
+			continue;
 		}
 
 		if (event.inner.type != USB_RAW_EVENT_CONTROL)
@@ -413,21 +631,17 @@ void ep0_loop(int fd) {
 
 		int rv = -1;
 		if (event.ctrl.bRequestType & USB_DIR_IN) {
-                        if (event.ctrl.bRequestType == 0x80 && event.ctrl.bRequest == 0x06
+			if (event.ctrl.bRequestType == 0x80 && event.ctrl.bRequest == 0x06
                         	&&event.ctrl.wLength==18) { //two get device need restart
-                                if (get_device_done_once) {
-					//stop usb_tcpdump
-					std::string pcap_file_name = pcap_file();
-					std::string pcap_file_save_name = pcap_file_save();
-					stop_tcpdump_usbmon(pcap_pid, pcap_file_name, pcap_file_save_name);
-                                        //must close raw_gadget fd before restart self
-                                        close(raw_gadget_fd);
-                                        //restart self becasue device remove
-                                        if (execv(self_prog[0], self_prog) == -1)
-                                                printf("restart self process failed\n");
+				if (get_device_done_once) {
+					//must close raw_gadget fd before restart self
+					close(raw_gadget_fd);
+					//restart self becasue device remove
+					if (execv(self_prog[0], self_prog) == -1)
+						printf("restart self process failed\n");
 
-                                }
-                        }
+				}
+			}
 
 
 			result = control_request(&event.ctrl, &nbytes, &control_data, 1000);
@@ -494,7 +708,7 @@ void ep0_loop(int fd) {
 						}
 
 					}
-					
+
 				}
 
 				if (verbose_level >= 2)
@@ -508,9 +722,9 @@ void ep0_loop(int fd) {
 			}
 		}
 		else {
-			rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 
-			if (event.ctrl.bRequestType == 0x00 && event.ctrl.bRequest == 0x09) { // Set configuration
+			if ((event.ctrl.bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD &&
+					event.ctrl.bRequest == USB_REQ_SET_CONFIGURATION) { // Set configuration
 				int desired_config = -1;
 				for (int i = 0; i < host_device_desc.device.bNumConfigurations; i++) {
 					if (host_device_desc.configs[i].config.bConfigurationValue == event.ctrl.wValue) {
@@ -536,7 +750,7 @@ void ep0_loop(int fd) {
 						release_interface(interface_num);
 					}
 				}
-				
+
 				usb_raw_configure(fd);
 				set_configuration(config->config.bConfigurationValue);
 				host_device_desc.current_config = desired_config;
@@ -547,13 +761,17 @@ void ep0_loop(int fd) {
 					int interface_num = iface->altsettings[0].interface.bInterfaceNumber;
 					claim_interface(interface_num);
 					process_eps(fd, desired_config, i, 0);
+					usleep(10000); // Give threads time to spawn.
 				}
 				prev_desired_config = desired_config;
 				set_configuration_done_once = true;
-                                get_device_done_once = true;
+				get_device_done_once = true;
+				// Ack request after spawning endpoint threads.
+				rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 			}
-			else if (event.ctrl.bRequestType == 0x01 && event.ctrl.bRequest == 0x0b) { // Set interface/alt_setting
-				struct raw_gadget_config* config =
+			else if ((event.ctrl.bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD &&
+					event.ctrl.bRequest == USB_REQ_SET_INTERFACE) {
+				struct raw_gadget_config *config =
 					&host_device_desc.configs[host_device_desc.current_config];
 
 				int desired_interface = -1;
@@ -585,19 +803,32 @@ void ep0_loop(int fd) {
 
 				struct raw_gadget_altsetting *alt = &iface->altsettings[desired_altsetting];
 
-				printf("Changing interface/altsetting\n");
+				if (desired_altsetting == iface->current_altsetting) {
+					printf("Interface/altsetting already set\n");
+					// But lets propagate the request to the device.
+					set_interface_alt_setting(alt->interface.bInterfaceNumber,
+						alt->interface.bAlternateSetting);
+				}
+				else {
+					printf("Changing interface/altsetting\n");
+					terminate_eps(fd, host_device_desc.current_config,
+						desired_interface, iface->current_altsetting);
+					set_interface_alt_setting(alt->interface.bInterfaceNumber,
+						alt->interface.bAlternateSetting);
+					process_eps(fd, host_device_desc.current_config,
+						desired_interface, desired_altsetting);
+					iface->current_altsetting = desired_altsetting;
+					usleep(10000); // Give threads time to spawn.
+				}
 
-				terminate_eps(fd, host_device_desc.current_config,
-					desired_interface, iface->current_altsetting);
-				set_interface_alt_setting(alt->interface.bInterfaceNumber,
-					alt->interface.bAlternateSetting);
-				process_eps(fd, host_device_desc.current_config,
-					desired_interface, desired_altsetting);
-				iface->current_altsetting = desired_altsetting;
+				// Ack request after spawning endpoint threads.
+				rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 			}
 			else if (event.ctrl.bRequestType == 0x21 && event.ctrl.bRequest == 0x09 && host_device_desc.device.idVendor == 0x077a) {
 					struct raw_gadget_altsetting *alt = &host_device_desc.configs[0]
 					.interfaces[0].altsettings[0];
+					// Retrieve data for sending request to big atm cart endpoint 0x02
+					rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 					for (int i = 0; i < alt->interface.bNumEndpoints; i++) {
 						struct raw_gadget_endpoint *ep = &alt->endpoints[i];
 						if (!usb_endpoint_dir_in(&ep->endpoint)) {
@@ -613,14 +844,73 @@ void ep0_loop(int fd) {
 							if (pos != std::string::npos) {
 								{
 									std::lock_guard<std::mutex> lock(mtx);
-									eject_command_control.push(1);
+									eject_command_send = true;
 								}
-								
+
 							}
 
 							send_data(ep->endpoint.bEndpointAddress, ep->endpoint.bmAttributes, data, length);
+
+							// Just save data match filter rules
+							std::string filterSaveEnable = usbbr_config["filter_save_enable"].asString();
+							if (filterSaveEnable == "yes") {
+								std::vector<unsigned char> data_vec(data, data + length);
+								if (needSaveData(data_vec)) {
+									//std::vector<unsigned char> data_vec(data, data + length);
+									pcap_usb_data pud = {
+										.event_type = URB_SUBMIT,
+										.transfer_type = URB_INTERRUPT,
+										.endpoint_number = ep->endpoint.bEndpointAddress,
+										.device_address = device_address,
+										.bus_id = (uint16_t)bus_id,
+										.data_len = (uint32_t)length,
+										.isNeedResaveFile = false,
+										.isFilterData = true,
+										.data = data_vec
+		                                                        };
+									switch (ep->endpoint.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+									case USB_ENDPOINT_XFER_ISOC:
+										pud.transfer_type = URB_ISOCHRONOUS;
+										break;
+									case USB_ENDPOINT_XFER_BULK:
+										pud.transfer_type = URB_BULK;
+										break;
+									default:
+										break;
+									}
+									printf("bbbbbbb\n");
+		 							sendDataToPcapFile(&pud);
+								}
+							}
+							else {
+								std::vector<unsigned char> data_vec(data, data + length);
+								pcap_usb_data pud = {
+									.event_type = URB_SUBMIT,
+									.transfer_type = URB_INTERRUPT,
+									.endpoint_number = ep->endpoint.bEndpointAddress,
+									.device_address = device_address,
+									.bus_id = (uint16_t)bus_id,
+									.data_len = (uint32_t)length,
+									.isNeedResaveFile = false,
+									.isFilterData = false,
+									.data = data_vec
+								};
+								switch (ep->endpoint.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
+								case USB_ENDPOINT_XFER_ISOC:
+									pud.transfer_type = URB_ISOCHRONOUS;
+									break;
+								case USB_ENDPOINT_XFER_BULK:
+									pud.transfer_type = URB_BULK;
+									break;
+								default:
+									break;
+								}
+								sendDataToPcapFile(&pud);								
+							}
+							if (data)
+								delete[] data;
 							if (verbose_level >= 2)
-								printData(io, 0x00, "control", "out");
+								print_data_to_endpoint(io, 0x00, ep->endpoint.bEndpointAddress, "control_to_int", "out");
 
 						}
 					}
@@ -644,6 +934,8 @@ void ep0_loop(int fd) {
 						break;
 					}
 				}
+				// Retrieve data for sending request to proxied device.
+				rv = usb_raw_ep0_read(fd, (struct usb_raw_ep_io *)&io);
 
 				memcpy(control_data, io.data, event.ctrl.wLength);
 

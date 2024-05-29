@@ -1,0 +1,18 @@
+new image install with sd
+
+1. Use Win32 Disk Imager write img to sd card
+2. Insert the sd card to borad
+3. First up in config guard set password
+4. Run command armbian-install, select 2
+5. When install complete, will guard you power off the borad, power off
+6. Remove sd card, power on borad start system from emmc
+7. After system up, insert the sd card
+8. Run dd command delete sd card boot sector, make sd card non-bootable
+	dd if=/dev/zero of=/dev/mmcblk0 bs=1024 seek=8 count=512
+9. Format the sd card to vfat
+	echo ",,L" | sfdisk /dev/mmcblk0
+	mkfs.vfat /dev/mmcblk0p1
+10. Mount sd card, present in fstab
+	echo  "/dev/mmcblk0p1		/home/ftpusb	vfat	defaults,uid=1000,gid=1000,umask=22	0	1"	>> /etc/fstab
+11. Reboot
+	

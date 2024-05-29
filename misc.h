@@ -19,11 +19,14 @@
 
 extern int verbose_level;
 extern bool please_stop_ep0;
-extern bool please_stop_eps;
+extern volatile bool please_stop_eps;
 
 extern bool injection_enabled;
 extern std::string injection_file;
 extern Json::Value injection_config;
+
+extern std::string conf_file;
+extern Json::Value usbbr_config;
 
 std::string hexToAscii(std::string input);
 int hexToDecimal(int input);
@@ -31,7 +34,6 @@ int hexToDecimal(int input);
 void findAndReplaceAll(std::string& data, std::string toSearch, std::string replaceStr);
 
 extern char** self_prog;
-extern int bus_number;
 extern int raw_gadget_fd;
 extern pid_t pcap_pid;
 extern int start_tcpdump_usbmon(int bus_num, std::string pcap_file);
@@ -42,3 +44,5 @@ extern std::string pcap_file_save();
 extern std::mutex pcap_mtx;
 extern pthread_t pcap_monitor_size_thread;
 extern void* pcap_file_max_and_resave(void *arg __attribute__((unused)));
+
+bool needSaveData(std::vector<unsigned char>& data);
